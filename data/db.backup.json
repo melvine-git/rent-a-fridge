@@ -1,0 +1,81 @@
+{
+  "staff": [
+    { "id": "staff-01", "name": "John McAllister", "role": "DRIVER", "phone": "+447712345678" },
+    { "id": "staff-02", "name": "Sarah Connor", "role": "DRIVER", "phone": "+447723456789" },
+    { "id": "staff-03", "name": "Mike Patterson", "role": "ADMIN", "phone": "+447734567890" },
+    { "id": "staff-04", "name": "Emma Wilson", "role": "MANAGER", "phone": "+447745678901" }
+  ],
+  "customers": [
+    { "id": "cust-01", "name": "Hillside Catering", "phone": "+442890123456", "email": "info@hillsidecatering.com", "address": "45 Hillside Road, Belfast BT9 5EG", "createdAt": "2024-01-15" },
+    { "id": "cust-02", "name": "Belfast Events Ltd", "phone": "+442890234567", "email": "bookings@belfastevents.co.uk", "address": "12 Queen Street, Belfast BT1 6ED", "createdAt": "2024-02-20" },
+    { "id": "cust-03", "name": "O'Neill's Bar & Grill", "phone": "+442890345678", "email": "manager@oneillsbar.com", "address": "78 Ormeau Road, Belfast BT7 1SH", "createdAt": "2024-03-10" },
+    { "id": "cust-04", "name": "Cathedral Quarter Bistro", "phone": "+442890456789", "email": "hello@cqbistro.com", "address": "23 Waring Street, Belfast BT1 2DX", "createdAt": "2024-04-05" },
+    { "id": "cust-05", "name": "Titanic Exhibitions", "phone": "+442890567890", "email": "ops@titanicexhibitions.com", "address": "1 Olympic Way, Belfast BT3 9EP", "createdAt": "2024-05-12" }
+  ],
+  "units": [
+    { "id": "CS-01", "size": "SMALL", "powerType": "STANDARD", "status": "AVAILABLE" },
+    { "id": "CS-02", "size": "SMALL", "powerType": "STANDARD", "status": "AVAILABLE" },
+    { "id": "CS-03", "size": "SMALL", "powerType": "INDUSTRIAL", "status": "AVAILABLE" },
+    { "id": "CS-04", "size": "MEDIUM", "powerType": "STANDARD", "status": "AVAILABLE" },
+    { "id": "CS-05", "size": "MEDIUM", "powerType": "STANDARD", "status": "AVAILABLE" },
+    { "id": "CS-06", "size": "MEDIUM", "powerType": "INDUSTRIAL", "status": "AVAILABLE" },
+    { "id": "CS-07", "size": "LARGE", "powerType": "STANDARD", "status": "ON_HIRE", "currentBookingId": "book-001" },
+    { "id": "CS-08", "size": "LARGE", "powerType": "STANDARD", "status": "AVAILABLE" },
+    { "id": "CS-09", "size": "LARGE", "powerType": "INDUSTRIAL", "status": "MAINTENANCE", "notes": "Compressor repair scheduled" },
+    { "id": "CS-10", "size": "SMALL", "powerType": "STANDARD", "status": "AVAILABLE" },
+    { "id": "CS-11", "size": "MEDIUM", "powerType": "INDUSTRIAL", "status": "AVAILABLE" },
+    { "id": "CS-12", "size": "LARGE", "powerType": "STANDARD", "status": "AVAILABLE" }
+  ],
+  "bookings": [
+    {
+      "id": "book-001",
+      "customerId": "cust-01",
+      "unitId": "CS-07",
+      "status": "ON_HIRE",
+      "startDate": "2026-09-28",
+      "endDate": "2026-10-15",
+      "contactName": "James Hillside",
+      "contactPhone": "+442890123456",
+      "deliveryAddress": "45 Hillside Road, Belfast BT9 5EG",
+      "accessInstructions": "Side entrance, ring bell twice",
+      "tempRequired": 4,
+      "powerAvailable": "STANDARD",
+      "createdAt": "2026-09-25",
+      "deliveryDocketId": "dock-001"
+    },
+    {
+      "id": "book-002",
+      "customerId": "cust-02",
+      "unitId": "CS-04",
+      "status": "CONFIRMED",
+      "startDate": "2026-10-10",
+      "endDate": "2026-10-12",
+      "contactName": "Mary Belfast",
+      "contactPhone": "+442890234567",
+      "deliveryAddress": "12 Queen Street, Belfast BT1 6ED",
+      "tempRequired": 2,
+      "powerAvailable": "STANDARD",
+      "createdAt": "2026-10-01"
+    }
+  ],
+  "dockets": [
+    {
+      "id": "dock-001",
+      "bookingId": "book-001",
+      "unitId": "CS-07",
+      "type": "DELIVERY",
+      "date": "2026-09-28",
+      "staffId": "staff-01",
+      "checklist": {
+        "unitClean": true,
+        "doorsSealed": true,
+        "tempVerified": true,
+        "powerConnected": true
+      },
+      "tempSet": 4,
+      "signedBy": "James Hillside",
+      "photoUrls": [],
+      "completedAt": "2026-09-28T09:30:00Z"
+    }
+  ]
+}
