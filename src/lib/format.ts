@@ -81,6 +81,23 @@ export function formatPhone(phone: string): string {
   return mobile ? `+44 ${mobile[1]} ${mobile[2]}` : phone;
 }
 
+const W3W_RE = /^\/{0,3}(\p{L}+)\.(\p{L}+)\.(\p{L}+)$/u;
+
+/** what3words addresses are three dot-separated words, optionally prefixed with ///. */
+export function isValidW3w(value: string): boolean {
+  return W3W_RE.test(value.trim());
+}
+
+/** Normalise to the canonical "///word.word.word" form, or undefined if blank/invalid. */
+export function normalizeW3w(value?: string): string | undefined {
+  const m = value?.trim().toLowerCase().match(W3W_RE);
+  return m ? `///${m[1]}.${m[2]}.${m[3]}` : undefined;
+}
+
+export function w3wUrl(value: string): string {
+  return `https://what3words.com/${encodeURIComponent(value.trim().replace(/^\/+/, ''))}`;
+}
+
 export function greeting(date = new Date()): string {
   const h = date.getHours();
   return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';

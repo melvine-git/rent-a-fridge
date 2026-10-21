@@ -5,6 +5,7 @@ import { TopBar } from './top-bar';
 import { Sidebar } from './sidebar';
 import { CommandMenu } from './command-menu';
 import { NotificationsPanel } from './notifications-panel';
+import { Footer } from './footer';
 import { Toaster } from '@/components/ui/sonner';
 import type { ShellData } from '@/types';
 
@@ -37,6 +38,7 @@ export function Shell({ children, data }: { children: React.ReactNode; data: She
         <main className="flex-1">
           <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</div>
         </main>
+        <Footer />
       </div>
       <CommandMenu open={searchOpen} onOpenChange={setSearchOpen} index={data.searchIndex} />
       <NotificationsPanel open={notificationsOpen} onOpenChange={setNotificationsOpen} notifications={data.notifications} />

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { readDb, writeDb } from './db';
+import { saveImage, deleteImage, IMAGE_TYPES, MAX_UPLOAD_BYTES } from './uploads';
 import type {
   Customer,
   CustomerAddress,
@@ -28,6 +29,8 @@ import type {
   CustomerWithStats,
   ShellData,
   UnitWithHire,
+  UpdateBookingInput,
+  ServiceableComponent,
 } from '@/types';
 
 // Helper to generate IDs
@@ -55,6 +58,148 @@ function datesOverlap(
   end2: string
 ): boolean {
   return start1 <= end2 && end1 >= start2;
+}
+
+type Db = ReturnType<typeof readDb>;
+
+const ACTIVE_STATUSES: BookingStatus[] = ['CONFIRMED', 'ON_HIRE'];
+
+function blankChecklist(tempSetting = 0): DeliveryChecklist {
+  return {
+    unitClean: false,
+    doorsSealed: false,
+    tempVerified: false,
+    powerConnected: false,
+    tempSetting,
+    powerSupplyChecked: false,
+    powerCableConnected: false,
+    hitchLockSecured: false,
+    wheelClampSecured: false,
+    doorLockSecured: false,
+  };
+}
+
+function defaultDriverId(db: Db): string {
+  return db.staff.find((s) => s.role === 'DRIVER')?.id ?? db.staff[0]?.id ?? '';
+}
+
+/** Returns a reason the unit can't take this hire, or null if it can. */
+function unitConflict(db: Db, unitId: string, startDate: string, endDate: string, ignoreBookingId?: string): string | null {
+  const unit = db.units.find((u) => u.id === unitId);
+  if (!unit) return 'Unit not found';
+  if (unit.status === 'MAINTENANCE') return 'Unit is under maintenance';
+  const clash = db.bookings.some(
+    (b) =>
+      b.id !== ignoreBookingId &&
+      b.unitId === unitId &&
+      ACTIVE_STATUSES.includes(b.status) &&
+      datesOverlap(startDate, endDate, b.startDate, b.endDate)
+  );
+  return clash ? 'Unit has a conflicting booking for these dates' : null;
+}
+
+/** Scheduled job for a booking, creating it if it doesn't exist yet. */
+function ensureScheduledDocket(db: Db, booking: Booking, type: DeliveryDocket['type']): DeliveryDocket {
+  const existing = db.dockets.find((d) => d.bookingId === booking.id && d.type === type && d.status !== 'COMPLETED');
+  if (existing) return existing;
+  const delivery = db.dockets.find((d) => d.id === booking.deliveryDocketId);
+  const checklist = blankChecklist(type === 'DELIVERY' ? booking.tempRequired : 0);
+  if (type === 'COLLECTION' && delivery) {
+    // Carry over what was left on site so the driver knows what to recover
+    checklist.hitchLockSecured = delivery.checklist.hitchLockSecured;
+    checklist.wheelClampSecured = delivery.checklist.wheelClampSecured;
+    checklist.doorLockSecured = delivery.checklist.doorLockSecured;
+    checklist.cableLengthUsed = delivery.checklist.cableLengthUsed;
+  }
+  const docket: DeliveryDocket = {
+    id: generateId(type === 'DELIVERY' ? 'del' : 'col'),
+    bookingId: booking.id,
+    unitId: booking.unitId,
+    type,
+    scheduledDate: type === 'DELIVERY' ? booking.startDate : booking.endDate,
+    scheduledTime: type === 'DELIVERY' ? booking.deliveryTime : booking.collectionTime,
+    staffId: defaultDriverId(db),
+    checklist,
+    tempSet: checklist.tempSetting,
+    signedBy: '',
+    photoUrls: [],
+    what3wordsAddress: booking.what3wordsAddress,
+    status: 'SCHEDULED',
+  };
+  db.dockets.push(docket);
+  return docket;
+}
+
+/**
+ * Bookings created before jobs were auto-scheduled have no job records. Create the
+ * missing open job (delivery for confirmed, collection for on hire). Returns true if
+ * anything changed so callers can persist.
+ */
+function backfillOpenJobs(db: Db): boolean {
+  let changed = false;
+  for (const b of db.bookings) {
+    const type = b.status === 'CONFIRMED' ? 'DELIVERY' : b.status === 'ON_HIRE' ? 'COLLECTION' : null;
+    if (type && !db.dockets.some((d) => d.bookingId === b.id && d.type === type && d.status !== 'COMPLETED') && !(type === 'COLLECTION' && b.collectionDocketId)) {
+      ensureScheduledDocket(db, b, type);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function readDbWithJobs(): Db {
+  const db = readDb();
+  if (backfillOpenJobs(db)) writeDb(db);
+  return db;
+}
+
+/** Marks a job complete and moves the booking/unit to the next stage. */
+function finaliseDocket(db: Db, docket: DeliveryDocket) {
+  docket.completedAt = new Date().toISOString();
+  docket.status = 'COMPLETED';
+  const booking = db.bookings.find((b) => b.id === docket.bookingId);
+  const unit = db.units.find((u) => u.id === docket.unitId);
+  if (!booking || !unit) return;
+  if (docket.type === 'DELIVERY') {
+    booking.status = 'ON_HIRE';
+    booking.deliveryDocketId = docket.id;
+    unit.status = 'ON_HIRE';
+    unit.currentBookingId = booking.id;
+    ensureScheduledDocket(db, booking, 'COLLECTION');
+  } else {
+    booking.status = 'COLLECTED';
+    booking.collectionDocketId = docket.id;
+    unit.status = 'AVAILABLE';
+    unit.currentBookingId = undefined;
+  }
+}
+
+function completeJob(type: DeliveryDocket['type'], input: MarkDeliveredInput): { success: boolean; docket?: DeliveryDocket; error?: string } {
+  const db = readDb();
+  const booking = db.bookings.find((b) => b.id === input.bookingId);
+  if (!booking) return { success: false, error: 'Booking not found' };
+  const expected: BookingStatus = type === 'DELIVERY' ? 'CONFIRMED' : 'ON_HIRE';
+  if (booking.status !== expected) {
+    return { success: false, error: type === 'DELIVERY' ? 'Booking is not awaiting delivery' : 'Booking is not on hire' };
+  }
+  if (!db.units.some((u) => u.id === booking.unitId)) return { success: false, error: 'Unit not found' };
+  if (!input.signedBy.trim()) return { success: false, error: 'Customer sign-off is required' };
+
+  const docket = ensureScheduledDocket(db, booking, type);
+  Object.assign(docket, {
+    staffId: input.staffId || docket.staffId,
+    checklist: { ...docket.checklist, ...input.checklist },
+    tempSet: input.tempSet,
+    damageNotes: input.damageNotes,
+    signedBy: input.signedBy.trim(),
+    signatureData: input.signatureData,
+    what3wordsAddress: input.what3wordsAddress || docket.what3wordsAddress,
+    photoUrls: input.photoUrls,
+  });
+  finaliseDocket(db, docket);
+  writeDb(db);
+  revalidatePath('/', 'layout');
+  return { success: true, docket };
 }
 
 // ============ CUSTOMER ACTIONS ============
@@ -215,25 +360,14 @@ export async function deleteCustomerAddress(
 export async function getAvailableUnits(
   startDate: string,
   endDate: string,
-  spec?: UnitSpec
+  spec?: UnitSpec,
+  ignoreBookingId?: string
 ): Promise<Unit[]> {
   const db = readDb();
 
   return db.units.filter((unit) => {
-    // Exclude units in maintenance
-    if (unit.status === 'MAINTENANCE') return false;
-
-    // Exclude units currently on hire
-    if (unit.status === 'ON_HIRE') return false;
-
-    // Check for overlapping bookings (CONFIRMED or ON_HIRE)
-    const hasOverlap = db.bookings.some(
-      (b) =>
-        b.unitId === unit.id &&
-        (b.status === 'CONFIRMED' || b.status === 'ON_HIRE') &&
-        datesOverlap(startDate, endDate, b.startDate, b.endDate)
-    );
-    if (hasOverlap) return false;
+    // Units on hire are only unavailable for dates that overlap their current hire
+    if (unitConflict(db, unit.id, startDate, endDate, ignoreBookingId)) return false;
 
     // Apply spec filters
     if (spec?.size && unit.size !== spec.size) return false;
@@ -266,7 +400,7 @@ export async function getOverdueActionBookings(): Promise<(Booking & { customer:
   return db.bookings
     .filter(b => {
       // Only active bookings with action dates that have passed
-      if (b.status === 'COLLECTED') return false;
+      if (!ACTIVE_STATUSES.includes(b.status)) return false;
       if (!b.actionDate) return false;
       return b.actionDate <= todayStr;
     })
@@ -289,23 +423,7 @@ export async function getAvailableUnitsByType(
   return db.units.filter((unit) => {
     // Filter by unit type if specified
     if (unitType && unit.unitType !== unitType) return false;
-    
-    // Exclude units in maintenance
-    if (unit.status === 'MAINTENANCE') return false;
-
-    // Exclude units currently on hire
-    if (unit.status === 'ON_HIRE') return false;
-
-    // Check for overlapping bookings
-    const hasOverlap = db.bookings.some(
-      (b) =>
-        b.unitId === unit.id &&
-        (b.status === 'CONFIRMED' || b.status === 'ON_HIRE') &&
-        datesOverlap(startDate, endDate, b.startDate, b.endDate)
-    );
-    if (hasOverlap) return false;
-
-    return true;
+    return !unitConflict(db, unit.id, startDate, endDate);
   });
 }
 
@@ -329,30 +447,14 @@ export async function createBooking(
   const db = readDb();
 
   // Server-side re-validation - cannot be bypassed
-  const unit = db.units.find((u) => u.id === input.unitId);
-  if (!unit) {
-    return { success: false, error: 'Unit not found' };
+  if (!input.startDate || !input.endDate || input.endDate < input.startDate) {
+    return { success: false, error: 'Collection date must be on or after the delivery date' };
   }
-
-  if (unit.status === 'MAINTENANCE') {
-    return { success: false, error: 'Unit is under maintenance' };
+  const conflict = unitConflict(db, input.unitId, input.startDate, input.endDate);
+  if (conflict) {
+    return { success: false, error: conflict };
   }
-
-  if (unit.status === 'ON_HIRE') {
-    return { success: false, error: 'Unit is currently on hire' };
-  }
-
-  // Check for overlapping bookings
-  const hasOverlap = db.bookings.some(
-    (b) =>
-      b.unitId === input.unitId &&
-      (b.status === 'CONFIRMED' || b.status === 'ON_HIRE') &&
-      datesOverlap(input.startDate, input.endDate, b.startDate, b.endDate)
-  );
-
-  if (hasOverlap) {
-    return { success: false, error: 'Unit has conflicting booking' };
-  }
+  const unit = db.units.find((u) => u.id === input.unitId)!;
 
   // Validate customer exists
   const customer = db.customers.find((c) => c.id === input.customerId);
@@ -373,10 +475,74 @@ export async function createBooking(
   };
 
   db.bookings.push(booking);
+  ensureScheduledDocket(db, booking, 'DELIVERY');
   writeDb(db);
-  revalidatePath('/');
+  revalidatePath('/', 'layout');
 
   return { success: true, booking };
+}
+
+export async function updateBooking(
+  bookingId: string,
+  input: UpdateBookingInput
+): Promise<{ success: boolean; booking?: Booking; error?: string }> {
+  const db = readDb();
+  const booking = db.bookings.find((b) => b.id === bookingId);
+  if (!booking) return { success: false, error: 'Booking not found' };
+  if (!ACTIVE_STATUSES.includes(booking.status)) {
+    return { success: false, error: 'Completed or cancelled bookings cannot be edited' };
+  }
+  const onHire = booking.status === 'ON_HIRE';
+  if (onHire && ((input.unitId && input.unitId !== booking.unitId) || (input.startDate && input.startDate !== booking.startDate))) {
+    return { success: false, error: 'The unit and delivery date cannot change once the unit is on hire' };
+  }
+
+  const next = { ...booking, ...input };
+  if (next.endDate < next.startDate) {
+    return { success: false, error: 'Collection date must be on or after the delivery date' };
+  }
+  const conflict = unitConflict(db, next.unitId, next.startDate, next.endDate, booking.id);
+  if (conflict && !(onHire && conflict === 'Unit is under maintenance')) {
+    return { success: false, error: conflict };
+  }
+  const unit = db.units.find((u) => u.id === next.unitId)!;
+  if (next.powerAvailable === 'STANDARD' && unit.powerType === 'INDUSTRIAL') {
+    return { success: false, error: 'Unit requires industrial power' };
+  }
+
+  Object.assign(booking, input);
+  // Keep open jobs in step with the booking
+  for (const d of db.dockets.filter((d) => d.bookingId === booking.id && d.status !== 'COMPLETED')) {
+    d.unitId = booking.unitId;
+    d.scheduledDate = d.type === 'DELIVERY' ? booking.startDate : booking.endDate;
+    d.scheduledTime = d.type === 'DELIVERY' ? booking.deliveryTime : booking.collectionTime;
+    if (booking.what3wordsAddress) d.what3wordsAddress = booking.what3wordsAddress;
+    if (d.type === 'DELIVERY') d.checklist.tempSetting = booking.tempRequired;
+  }
+  writeDb(db);
+  revalidatePath('/', 'layout');
+  return { success: true, booking };
+}
+
+export async function cancelBooking(
+  bookingId: string,
+  reason?: string
+): Promise<{ success: boolean; error?: string }> {
+  const db = readDb();
+  const booking = db.bookings.find((b) => b.id === bookingId);
+  if (!booking) return { success: false, error: 'Booking not found' };
+  if (booking.status !== 'CONFIRMED') {
+    return { success: false, error: 'Only bookings that have not been delivered can be cancelled' };
+  }
+  booking.status = 'CANCELLED';
+  booking.cancelledAt = new Date().toISOString();
+  booking.cancellationReason = reason?.trim() || undefined;
+  booking.actionDate = undefined;
+  // Drop the jobs that will no longer happen
+  db.dockets = db.dockets.filter((d) => !(d.bookingId === booking.id && d.status !== 'COMPLETED'));
+  writeDb(db);
+  revalidatePath('/', 'layout');
+  return { success: true };
 }
 
 // ============ DELIVERY ACTIONS ============
@@ -429,109 +595,19 @@ export async function getCollectionsDue(): Promise<
 export async function markDelivered(
   input: MarkDeliveredInput
 ): Promise<{ success: boolean; docket?: DeliveryDocket; error?: string }> {
-  const db = readDb();
-
-  const booking = db.bookings.find((b) => b.id === input.bookingId);
-  if (!booking) {
-    return { success: false, error: 'Booking not found' };
-  }
-
-  if (booking.status !== 'CONFIRMED') {
-    return { success: false, error: 'Booking is not in CONFIRMED status' };
-  }
-
-  const unit = db.units.find((u) => u.id === booking.unitId);
-  if (!unit) {
-    return { success: false, error: 'Unit not found' };
-  }
-
-  // Create docket
-  const docket: DeliveryDocket = {
-    id: generateId('dock'),
-    bookingId: booking.id,
-    unitId: unit.id,
-    type: 'DELIVERY',
-    scheduledDate: today(),
-    staffId: input.staffId,
-    checklist: input.checklist as DeliveryChecklist,
-    tempSet: input.tempSet,
-    damageNotes: input.damageNotes,
-    signedBy: input.signedBy,
-    photoUrls: input.photoUrls,
-    completedAt: new Date().toISOString(),
-    status: 'COMPLETED',
-  };
-
-  // Update booking status
-  booking.status = 'ON_HIRE';
-  booking.deliveryDocketId = docket.id;
-
-  // Update unit status
-  unit.status = 'ON_HIRE';
-  unit.currentBookingId = booking.id;
-
-  db.dockets.push(docket);
-  writeDb(db);
-  revalidatePath('/');
-
-  return { success: true, docket };
+  return completeJob('DELIVERY', input);
 }
 
 export async function markCollected(
   input: MarkCollectedInput
 ): Promise<{ success: boolean; docket?: DeliveryDocket; error?: string }> {
-  const db = readDb();
-
-  const booking = db.bookings.find((b) => b.id === input.bookingId);
-  if (!booking) {
-    return { success: false, error: 'Booking not found' };
-  }
-
-  if (booking.status !== 'ON_HIRE') {
-    return { success: false, error: 'Booking is not in ON_HIRE status' };
-  }
-
-  const unit = db.units.find((u) => u.id === booking.unitId);
-  if (!unit) {
-    return { success: false, error: 'Unit not found' };
-  }
-
-  // Create docket
-  const docket: DeliveryDocket = {
-    id: generateId('dock'),
-    bookingId: booking.id,
-    unitId: unit.id,
-    type: 'COLLECTION',
-    scheduledDate: today(),
-    staffId: input.staffId,
-    checklist: input.checklist as DeliveryChecklist,
-    tempSet: input.tempSet,
-    damageNotes: input.damageNotes,
-    signedBy: input.signedBy,
-    photoUrls: input.photoUrls,
-    completedAt: new Date().toISOString(),
-    status: 'COMPLETED',
-  };
-
-  // Update booking status
-  booking.status = 'COLLECTED';
-  booking.collectionDocketId = docket.id;
-
-  // Update unit status
-  unit.status = 'AVAILABLE';
-  unit.currentBookingId = undefined;
-
-  db.dockets.push(docket);
-  writeDb(db);
-  revalidatePath('/');
-
-  return { success: true, docket };
+  return completeJob('COLLECTION', input);
 }
 
 // ============ DELIVERY MANAGEMENT ============
 
 export async function getAllDockets(): Promise<(DeliveryDocket & { booking: Booking; customer: Customer; unit: Unit; staff: Staff })[]> {
-  const db = readDb();
+  const db = readDbWithJobs();
   return db.dockets.map(d => {
     const booking = db.bookings.find(b => b.id === d.bookingId)!;
     const customer = db.customers.find(c => c.id === booking?.customerId)!;
@@ -542,11 +618,11 @@ export async function getAllDockets(): Promise<(DeliveryDocket & { booking: Book
 }
 
 export async function getUpcomingDeliveries(): Promise<(DeliveryDocket & { booking: Booking; customer: Customer; unit: Unit; staff: Staff })[]> {
-  const db = readDb();
+  const db = readDbWithJobs();
   const todayStr = today();
   
   return db.dockets
-    .filter(d => d.status === 'SCHEDULED' && d.scheduledDate >= todayStr)
+    .filter(d => d.type === 'DELIVERY' && d.status === 'SCHEDULED' && d.scheduledDate >= todayStr)
     .map(d => {
       const booking = db.bookings.find(b => b.id === d.bookingId)!;
       const customer = db.customers.find(c => c.id === booking?.customerId)!;
@@ -587,34 +663,24 @@ export async function completeDocket(
   if (!docket) {
     return { success: false, error: 'Docket not found' };
   }
+  if (docket.status === 'COMPLETED') {
+    return { success: false, error: 'This job has already been completed' };
+  }
   
   docket.signedBy = signedBy;
   docket.signatureData = signatureData;
-  docket.what3wordsAddress = what3wordsAddress;
-  docket.completedAt = new Date().toISOString();
-  docket.status = 'COMPLETED';
-  
-  // Update booking and unit status
-  const booking = db.bookings.find(b => b.id === docket.bookingId);
-  const unit = db.units.find(u => u.id === docket.unitId);
-  
-  if (booking && unit) {
-    if (docket.type === 'DELIVERY') {
-      booking.status = 'ON_HIRE';
-      booking.deliveryDocketId = docket.id;
-      unit.status = 'ON_HIRE';
-      unit.currentBookingId = booking.id;
-    } else {
-      booking.status = 'COLLECTED';
-      booking.collectionDocketId = docket.id;
-      unit.status = 'AVAILABLE';
-      unit.currentBookingId = undefined;
-    }
-  }
+  docket.what3wordsAddress = what3wordsAddress || docket.what3wordsAddress;
+  finaliseDocket(db, docket);
   
   writeDb(db);
-  revalidatePath('/');
+  revalidatePath('/', 'layout');
   return { success: true };
+}
+
+/** Open (not yet completed) job for a booking, if one exists. */
+export async function getOpenDocket(bookingId: string, type: DeliveryDocket['type']): Promise<DeliveryDocket | null> {
+  const db = readDb();
+  return db.dockets.find((d) => d.bookingId === bookingId && d.type === type && d.status !== 'COMPLETED') ?? null;
 }
 
 export async function getStaff(): Promise<Staff[]> {
@@ -623,7 +689,7 @@ export async function getStaff(): Promise<Staff[]> {
 }
 
 export async function getUpcomingCollections(): Promise<(DeliveryDocket & { booking: Booking; customer: Customer; unit: Unit; staff: Staff; deliveryDocket?: DeliveryDocket })[]> {
-  const db = readDb();
+  const db = readDbWithJobs();
   const todayStr = today();
   
   // Get collection dockets that are scheduled
@@ -876,6 +942,95 @@ export async function addMaintenanceRecord(
   return { success: true, record: newRecord };
 }
 
+export async function addUnitPhotos(
+  unitId: string,
+  formData: FormData
+): Promise<{ success: boolean; photoUrls?: string[]; error?: string }> {
+  const db = readDb();
+  const unit = db.units.find((u) => u.id === unitId);
+  if (!unit) return { success: false, error: 'Unit not found' };
+
+  const files = formData.getAll('photos').filter((f): f is File => f instanceof File && f.size > 0);
+  if (files.length === 0) return { success: false, error: 'Choose at least one photo' };
+  for (const f of files) {
+    if (!IMAGE_TYPES[f.type]) return { success: false, error: `${f.name} is not a JPG, PNG, WebP or GIF image` };
+    if (f.size > MAX_UPLOAD_BYTES) return { success: false, error: `${f.name} is larger than 8 MB` };
+  }
+
+  const urls: string[] = [];
+  for (const f of files) {
+    urls.push(saveImage(['units', unit.id], Buffer.from(await f.arrayBuffer()), f.type));
+  }
+  unit.specifications = { ...unit.specifications, photoUrls: [...(unit.specifications?.photoUrls ?? []), ...urls] };
+  writeDb(db);
+  revalidatePath(`/units/${unit.id}`);
+  return { success: true, photoUrls: unit.specifications.photoUrls };
+}
+
+export async function removeUnitPhoto(unitId: string, url: string): Promise<{ success: boolean; error?: string }> {
+  const db = readDb();
+  const unit = db.units.find((u) => u.id === unitId);
+  if (!unit?.specifications?.photoUrls?.includes(url)) return { success: false, error: 'Photo not found' };
+  unit.specifications.photoUrls = unit.specifications.photoUrls.filter((p) => p !== url);
+  deleteImage(url);
+  writeDb(db);
+  revalidatePath(`/units/${unit.id}`);
+  return { success: true };
+}
+
+const DEFAULT_SERVICEABLE_COMPONENTS: Omit<ServiceableComponent, 'id'>[] = [
+  { type: 'COMPRESSOR', name: 'Compressor', description: 'Main refrigeration compressor unit', intervalMonths: 12 },
+  { type: 'EVAPORATOR', name: 'Evaporator', description: 'Evaporator coils and housing', intervalMonths: 6 },
+  { type: 'CONTROLLER', name: 'Temperature controller', description: 'Digital temperature control unit', intervalMonths: 12 },
+  { type: 'FAN_MOTOR', name: 'Fan motor', description: 'Evaporator and condenser fan motors', intervalMonths: 6 },
+  { type: 'OTHER', name: 'Door seals', description: 'Rubber door gaskets and seals', intervalMonths: 12 },
+  { type: 'OTHER', name: 'Refrigerant', description: 'Refrigerant gas levels and pressure', intervalMonths: 12 },
+  { type: 'OTHER', name: 'Electrical', description: 'Wiring, connections and safety switches', intervalMonths: 12 },
+  { type: 'OTHER', name: 'Drainage', description: 'Condensate drain and tray', intervalMonths: 6 },
+];
+
+export async function getServiceableComponentList(): Promise<ServiceableComponent[]> {
+  const db = readDb();
+  return db.serviceableComponents ?? DEFAULT_SERVICEABLE_COMPONENTS.map((c, i) => ({ ...c, id: `svc-default-${i + 1}` }));
+}
+
+function validateComponent(data: Omit<ServiceableComponent, 'id'>): string | null {
+  if (!data.name.trim()) return 'Enter a component name';
+  if (!Number.isInteger(data.intervalMonths) || data.intervalMonths < 1 || data.intervalMonths > 120) {
+    return 'Service interval must be between 1 and 120 months';
+  }
+  return null;
+}
+
+export async function saveServiceableComponent(
+  data: Omit<ServiceableComponent, 'id'> & { id?: string }
+): Promise<{ success: boolean; error?: string }> {
+  const error = validateComponent(data);
+  if (error) return { success: false, error };
+  const db = readDb();
+  // First edit materialises the default list so it becomes fully editable
+  db.serviceableComponents ??= await getServiceableComponentList();
+  const clean = { type: data.type, name: data.name.trim(), description: data.description?.trim() || undefined, intervalMonths: data.intervalMonths };
+  const existing = data.id ? db.serviceableComponents.find((c) => c.id === data.id) : undefined;
+  if (data.id && !existing) return { success: false, error: 'Component not found' };
+  if (existing) Object.assign(existing, clean);
+  else db.serviceableComponents.push({ id: generateId('svc'), ...clean });
+  writeDb(db);
+  revalidatePath('/maintenance');
+  return { success: true };
+}
+
+export async function removeServiceableComponent(id: string): Promise<{ success: boolean; error?: string }> {
+  const db = readDb();
+  db.serviceableComponents ??= await getServiceableComponentList();
+  const before = db.serviceableComponents.length;
+  db.serviceableComponents = db.serviceableComponents.filter((c) => c.id !== id);
+  if (db.serviceableComponents.length === before) return { success: false, error: 'Component not found' };
+  writeDb(db);
+  revalidatePath('/maintenance');
+  return { success: true };
+}
+
 export async function setUnitStatus(
   unitId: string,
   status: UnitStatus
@@ -1058,7 +1213,7 @@ export async function getShellData(): Promise<ShellData> {
 
   for (const b of db.bookings) {
     const customer = db.customers.find((c) => c.id === b.customerId);
-    if (b.status !== 'COLLECTED' && b.actionDate && b.actionDate <= todayStr) {
+    if (ACTIVE_STATUSES.includes(b.status) && b.actionDate && b.actionDate <= todayStr) {
       notifications.push({
         id: `action-${b.id}`,
         kind: 'ACTION_OVERDUE',
@@ -1124,7 +1279,7 @@ export async function getShellData(): Promise<ShellData> {
         href: `/units/${u.id}`,
       })),
       ...db.bookings
-        .filter((b) => b.status !== 'COLLECTED')
+        .filter((b) => ACTIVE_STATUSES.includes(b.status))
         .map((b) => ({
           type: 'booking' as const,
           id: b.id,
@@ -1171,11 +1326,15 @@ export async function getBookingDetail(id: string) {
   if (!detailed) return null;
   const dockets = db.dockets.filter((d) => d.bookingId === id);
   const staffName = (sid: string) => db.staff.find((s) => s.id === sid)?.name;
+  const pick = (type: DeliveryDocket['type']) =>
+    dockets.find((d) => d.type === type && d.status === 'COMPLETED') ?? dockets.find((d) => d.type === type);
   return {
     booking: detailed,
-    delivery: dockets.find((d) => d.type === 'DELIVERY'),
-    collection: dockets.find((d) => d.type === 'COLLECTION'),
+    delivery: pick('DELIVERY'),
+    collection: pick('COLLECTION'),
     staff: Object.fromEntries(dockets.map((d) => [d.staffId, staffName(d.staffId) ?? 'Unassigned'])),
+    allStaff: db.staff,
+    units: db.units,
   };
 }
 

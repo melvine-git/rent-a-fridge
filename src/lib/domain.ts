@@ -42,6 +42,7 @@ export const STATUS_META: Record<UnitStatus | BookingStatus, { label: string; to
   MAINTENANCE: { label: 'Maintenance', tone: 'warning' },
   CONFIRMED: { label: 'Scheduled', tone: 'scheduled' },
   COLLECTED: { label: 'Completed', tone: 'neutral' },
+  CANCELLED: { label: 'Cancelled', tone: 'danger' },
 };
 
 export const TONE_CLASSES: Record<Tone, { badge: string; dot: string; solid: string; soft: string; text: string }> = {

@@ -476,6 +476,56 @@
       "photoUrls": [],
       "completedAt": "2026-10-12T06:53:27.144Z",
       "status": "COMPLETED"
+    },
+    {
+      "id": "col-mvianura",
+      "bookingId": "book-001",
+      "unitId": "CS-04",
+      "type": "COLLECTION",
+      "scheduledDate": "2026-10-25",
+      "scheduledTime": "17:00",
+      "staffId": "staff-01",
+      "checklist": {
+        "unitClean": false,
+        "doorsSealed": false,
+        "tempVerified": false,
+        "powerConnected": false,
+        "tempSetting": 0,
+        "powerSupplyChecked": false,
+        "powerCableConnected": false,
+        "hitchLockSecured": true,
+        "wheelClampSecured": false,
+        "doorLockSecured": true,
+        "cableLengthUsed": "10m"
+      },
+      "tempSet": 0,
+      "signedBy": "",
+      "photoUrls": [],
+      "status": "SCHEDULED"
+    },
+    {
+      "id": "del-mvianura",
+      "bookingId": "book-mus8w9yr",
+      "unitId": "CS-03",
+      "type": "DELIVERY",
+      "scheduledDate": "2026-10-04",
+      "staffId": "staff-01",
+      "checklist": {
+        "unitClean": false,
+        "doorsSealed": false,
+        "tempVerified": false,
+        "powerConnected": false,
+        "tempSetting": 5,
+        "powerSupplyChecked": false,
+        "powerCableConnected": false,
+        "hitchLockSecured": false,
+        "wheelClampSecured": false,
+        "doorLockSecured": false
+      },
+      "tempSet": 5,
+      "signedBy": "",
+      "photoUrls": [],
+      "status": "SCHEDULED"
     }
   ]
 }

@@ -3,14 +3,12 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Pill } from '@/components/ui/status-badge';
+import { JobDrawer, type JobTarget } from '@/components/jobs/job-drawer';
 import { KpiCard } from '@/components/app/kpi-card';
 import { Panel } from '@/components/app/panel';
 import { EmptyState } from '@/components/app/empty-state';
 import { UnitTypeIcon, UnitCode } from '@/components/app/unit-type-icon';
-import { DeliveryChecklistComponent } from '../deliveries/delivery-checklist';
 import type { Booking, Customer, Unit, Staff, DeliveryDocket } from '@/types';
 import { daysFromToday, formatDate, formatPhone } from '@/lib/format';
 import { CalendarClock, CircleCheck, Lock, MapPin, PackageCheck, Phone, ArrowUpRight, ExternalLink } from 'lucide-react';
@@ -37,9 +35,13 @@ function itemsToRecover(checklist?: DeliveryDocket['checklist']): string[] {
   ].filter((x): x is string => !!x);
 }
 
-export function CollectionsView({ collectionsDue, upcomingCollections, completedCollections, collectionsFromBookings }: CollectionsViewProps) {
+export function CollectionsView({ collectionsDue, staff, upcomingCollections, completedCollections, collectionsFromBookings }: CollectionsViewProps) {
   const router = useRouter();
-  const [selectedDocket, setSelectedDocket] = useState<DocketWithDetails | null>(null);
+  const [job, setJob] = useState<JobTarget | null>(null);
+  const collect = (booking: Booking & { customer: Customer; unit: Unit }, delivery?: DeliveryDocket) =>
+    setJob({ booking, type: 'collection', deliveredChecklist: delivery?.checklist });
+  const dueIds = new Set(collectionsFromBookings.map((b) => b.id));
+  const scheduled = upcomingCollections.filter((d) => d.booking.status === 'ON_HIRE' && !dueIds.has(d.bookingId));
 
   const withAccessories = collectionsFromBookings.filter((b) => itemsToRecover(b.deliveryDocket?.checklist).length > 0).length;
   const overdue = collectionsFromBookings.filter((b) => daysFromToday(b.endDate) < 0).length;
@@ -55,7 +57,7 @@ export function CollectionsView({ collectionsDue, upcomingCollections, completed
           emphasis={overdue > 0}
           hint={overdue ? `${overdue} overdue` : 'None overdue'}
         />
-        <KpiCard label="Scheduled" value={upcomingCollections.length} icon={CalendarClock} tone="scheduled" hint="Collection dockets booked" />
+        <KpiCard label="Scheduled" value={scheduled.length} icon={CalendarClock} tone="scheduled" hint="Collection dockets booked" />
         <KpiCard label="Accessories to recover" value={withAccessories} icon={Lock} tone="warning" hint="Locks, clamps and cables on site" />
         <KpiCard label="Completed" value={completedCollections.length} icon={CircleCheck} tone="success" hint="All time" />
       </div>
@@ -112,15 +114,25 @@ export function CollectionsView({ collectionsDue, upcomingCollections, completed
                             <span className="text-xs text-muted-foreground">Unit only</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
                           <a
                             href={`tel:${b.contactPhone}`}
                             onClick={(e) => e.stopPropagation()}
                             title={formatPhone(b.contactPhone)}
-                            className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-white px-2.5 text-xs font-medium hover:bg-muted"
+                            aria-label={`Call ${b.contactName}`}
+                            className="mr-1.5 inline-flex size-8 items-center justify-center rounded-md border bg-white hover:bg-muted"
                           >
-                            <Phone className="size-3.5" /> Call
+                            <Phone className="size-3.5" />
                           </a>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              collect(b, b.deliveryDocket);
+                            }}
+                            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-emerald-600 px-2.5 text-xs font-medium text-white hover:bg-emerald-700"
+                          >
+                            <PackageCheck className="size-3.5" /> Collect
+                          </button>
                         </td>
                       </tr>
                     );
@@ -131,16 +143,19 @@ export function CollectionsView({ collectionsDue, upcomingCollections, completed
           )}
         </Panel>
 
-        <Panel title="Scheduled collections" count={upcomingCollections.length}>
-          {upcomingCollections.length === 0 ? (
+        <Panel title="Scheduled collections" description="Units on hire, by return date" count={scheduled.length}>
+          {scheduled.length === 0 ? (
             <EmptyState compact icon={CalendarClock} title="No collections scheduled" />
           ) : (
             <ul className="divide-y">
-              {upcomingCollections.slice(0, 8).map((d) => {
+              {scheduled.slice(0, 8).map((d) => {
                 const recover = itemsToRecover(d.deliveryDocket?.checklist);
                 return (
                   <li key={d.id}>
-                    <button onClick={() => setSelectedDocket(d)} className="w-full px-4 py-3 text-left hover:bg-muted/40">
+                    <button
+                      onClick={() => collect({ ...d.booking, customer: d.customer, unit: d.unit }, d.deliveryDocket)}
+                      className="w-full px-4 py-3 text-left hover:bg-muted/40"
+                    >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex min-w-0 items-center gap-2">
                           <UnitCode id={d.unit.id} />
@@ -215,23 +230,15 @@ export function CollectionsView({ collectionsDue, upcomingCollections, completed
         )}
       </Panel>
 
-      <Dialog open={!!selectedDocket} onOpenChange={(o) => !o && setSelectedDocket(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Collection checklist</DialogTitle>
-          </DialogHeader>
-          {selectedDocket && (
-            <DeliveryChecklistComponent
-              docket={selectedDocket}
-              onComplete={() => {
-                setSelectedDocket(null);
-                toast.success('Collection completed', { description: 'Booking marked as finished' });
-                router.refresh();
-              }}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+      <JobDrawer
+        job={job}
+        staff={staff}
+        onClose={() => setJob(null)}
+        onCompleted={() => {
+          setJob(null);
+          router.refresh();
+        }}
+      />
     </div>
   );
 }

@@ -19,18 +19,20 @@ import { toast } from 'sonner';
 import { addMaintenanceRecord, setUnitStatus } from '@/lib/actions';
 import { formatDate, toISODate } from '@/lib/format';
 import { COMPONENT_LABELS, RECORD_TYPE_META, GBP as gbp } from '@/lib/domain';
-import type { Unit, MaintenanceRecord, BOMComponent } from '@/types';
+import { ServiceableComponents } from './serviceable-components';
+import type { Unit, MaintenanceRecord, BOMComponent, ServiceableComponent } from '@/types';
 
 type RecordWithUnit = MaintenanceRecord & { unit: Unit };
 type ComponentWithUnit = BOMComponent & { unit: Unit };
 type MaintenanceDueItem = { unit: Unit; record: MaintenanceRecord; daysOverdue: number };
-type ServiceableComponent = { type: BOMComponent['type']; count: number; units: string[] };
+type InstalledByType = { type: BOMComponent['type']; count: number; units: string[] };
 
 interface MaintenanceViewProps {
   maintenanceRecords: RecordWithUnit[];
   maintenanceDue: MaintenanceDueItem[];
   unitsInMaintenance: Unit[];
-  serviceableComponents: ServiceableComponent[];
+  serviceableComponents: InstalledByType[];
+  serviceList: ServiceableComponent[];
   allComponents: ComponentWithUnit[];
   allUnits: Unit[];
 }
@@ -42,17 +44,6 @@ const COMPONENT_ICONS: Record<BOMComponent['type'], typeof Cpu> = {
   FAN_MOTOR: Fan,
   OTHER: Settings,
 };
-
-const SERVICEABLE_COMPONENTS_LIST = [
-  { type: 'COMPRESSOR' as const, name: 'Compressor', description: 'Main refrigeration compressor unit', serviceInterval: '12 months' },
-  { type: 'EVAPORATOR' as const, name: 'Evaporator', description: 'Evaporator coils and housing', serviceInterval: '6 months' },
-  { type: 'CONTROLLER' as const, name: 'Temperature controller', description: 'Digital temperature control unit', serviceInterval: '12 months' },
-  { type: 'FAN_MOTOR' as const, name: 'Fan motor', description: 'Evaporator and condenser fan motors', serviceInterval: '6 months' },
-  { type: 'OTHER' as const, name: 'Door seals', description: 'Rubber door gaskets and seals', serviceInterval: '12 months' },
-  { type: 'OTHER' as const, name: 'Refrigerant', description: 'Refrigerant gas levels and pressure', serviceInterval: '12 months' },
-  { type: 'OTHER' as const, name: 'Electrical', description: 'Wiring, connections and safety switches', serviceInterval: '12 months' },
-  { type: 'OTHER' as const, name: 'Drainage', description: 'Condensate drain and tray', serviceInterval: '6 months' },
-];
 
 const EMPTY_FORM = {
   type: 'SCHEDULED' as MaintenanceRecord['type'],
@@ -68,6 +59,7 @@ export function MaintenanceView({
   maintenanceDue,
   unitsInMaintenance,
   serviceableComponents,
+  serviceList,
   allComponents,
   allUnits,
 }: MaintenanceViewProps) {
@@ -280,37 +272,7 @@ export function MaintenanceView({
             </div>
           </Panel>
 
-          <Panel title="Service schedule" description="Recommended service intervals. Final list to be confirmed by the service team.">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
-                    <th className="px-4 py-2.5 font-medium">Component</th>
-                    <th className="px-4 py-2.5 font-medium">Scope</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Interval</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {SERVICEABLE_COMPONENTS_LIST.map((c) => {
-                    const Icon = COMPONENT_ICONS[c.type];
-                    return (
-                      <tr key={c.name}>
-                        <td className="px-4 py-3">
-                          <span className="flex items-center gap-2 font-medium text-foreground">
-                            <Icon className="size-4 text-muted-foreground" /> {c.name}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">{c.description}</td>
-                        <td className="px-4 py-3 text-right">
-                          <Pill tone="neutral">Every {c.serviceInterval}</Pill>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </Panel>
+          <ServiceableComponents components={serviceList} />
         </div>
       )}
 

@@ -1,44 +1,22 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import Link from 'next/link';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Pill } from '@/components/ui/status-badge';
 import { KpiCard } from '@/components/app/kpi-card';
 import { Panel } from '@/components/app/panel';
 import { EmptyState } from '@/components/app/empty-state';
 import { UnitTypeIcon, UnitCode } from '@/components/app/unit-type-icon';
-import { markDelivered, markCollected } from '@/lib/actions';
-import { DeliveryChecklistComponent } from './delivery-checklist';
-import { POWER_LABELS, UNIT_SIZE_LABELS } from '@/lib/domain';
-import { daysFromToday, formatDate, formatDayDate, formatPhone } from '@/lib/format';
+import { JobDrawer, type JobTarget, type JobType } from '@/components/jobs/job-drawer';
+import { UNIT_SIZE_LABELS } from '@/lib/domain';
+import { daysFromToday, formatDate, formatDayDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { Booking, Customer, Unit, Staff, DeliveryDocket, BookingWithDetails } from '@/types';
-import {
-  Check,
-  CalendarClock,
-  CircleCheck,
-  Clock,
-  MapPin,
-  Navigation,
-  PackageCheck,
-  Phone,
-  Thermometer,
-  Truck,
-  Zap,
-  Box,
-  TriangleAlert,
-  ArrowUpRight,
-} from 'lucide-react';
+import { CalendarClock, CircleCheck, Clock, MapPin, PackageCheck, PenLine, Thermometer, Truck, Zap, Box } from 'lucide-react';
 
 type JobWithDetails = BookingWithDetails;
 type DocketWithDetails = DeliveryDocket & { booking: Booking; customer: Customer; unit: Unit; staff: Staff };
-type JobType = 'delivery' | 'collection';
 
 interface DeliveriesViewProps {
   tomorrowDeliveries: JobWithDetails[];
@@ -60,14 +38,15 @@ export function DeliveriesView({
   upcomingDockets,
 }: DeliveriesViewProps) {
   const router = useRouter();
-  const [job, setJob] = useState<{ booking: JobWithDetails; type: JobType } | null>(null);
-  const [selectedDocket, setSelectedDocket] = useState<DocketWithDetails | null>(null);
+  const [job, setJob] = useState<JobTarget | null>(null);
   const [[todayDate, tomorrowDate]] = useState(() => {
     const t = new Date();
     const n = new Date(t);
     n.setDate(n.getDate() + 1);
     return [t, n] as const;
   });
+  const boardIds = new Set([...todayDeliveries, ...tomorrowDeliveries].map((b) => b.id));
+  const comingUp = upcomingDockets.filter((d) => d.booking.status === 'CONFIRMED' && !boardIds.has(d.bookingId));
 
   const completedDockets = allDockets
     .filter((d) => d.status === 'COMPLETED')
@@ -76,7 +55,8 @@ export function DeliveriesView({
   const byTime = (a: JobWithDetails, b: JobWithDetails, key: 'deliveryTime' | 'collectionTime') =>
     (a[key] ?? '99').localeCompare(b[key] ?? '99');
 
-  const open = (booking: JobWithDetails, type: JobType) => setJob({ booking, type });
+  const open = (booking: JobWithDetails, type: JobType) =>
+    setJob({ booking, type, deliveredChecklist: allDockets.find((d) => d.id === booking.deliveryDocketId)?.checklist });
 
   return (
     <div className="space-y-6">
@@ -176,12 +156,15 @@ export function DeliveriesView({
         </Panel>
 
         <div className="space-y-4 xl:col-span-2">
-          {upcomingDockets.length > 0 && (
-            <Panel title="Scheduled dockets" count={upcomingDockets.length}>
+          {comingUp.length > 0 && (
+            <Panel title="Coming up" description="Deliveries scheduled after tomorrow" count={comingUp.length}>
               <ul className="divide-y">
-                {upcomingDockets.slice(0, 5).map((d) => (
+                {comingUp.slice(0, 6).map((d) => (
                   <li key={d.id}>
-                    <button onClick={() => setSelectedDocket(d)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/40">
+                    <button
+                      onClick={() => open({ ...d.booking, customer: d.customer, unit: d.unit }, 'delivery')}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/40"
+                    >
                       <Truck className="size-4 shrink-0 text-muted-foreground" />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 text-sm">
@@ -220,7 +203,12 @@ export function DeliveriesView({
                         <UnitCode id={d.unit.id} />
                         <span className="truncate text-muted-foreground">{d.customer.name}</span>
                       </div>
-                      {d.signedBy && <div className="truncate text-xs text-muted-foreground">Signed by {d.signedBy}</div>}
+                      {d.signedBy && (
+                        <div className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+                          {d.signatureData && <PenLine className="size-3 shrink-0 text-emerald-600" aria-label="Signature captured" />}
+                          Signed by {d.signedBy}
+                        </div>
+                      )}
                     </div>
                     <span className="tabular shrink-0 text-xs text-muted-foreground">
                       {formatDate(d.completedAt ? d.completedAt.split('T')[0] : d.scheduledDate)}
@@ -234,39 +222,15 @@ export function DeliveriesView({
       </div>
 
       {/* Job drawer */}
-      <Sheet open={!!job} onOpenChange={(o) => !o && setJob(null)}>
-        <SheetContent side="right" className="w-full gap-0 sm:max-w-lg">
-          {job && (
-            <JobSheet
-              key={job.booking.id + job.type}
-              job={job.booking}
-              type={job.type}
-              staff={staff}
-              onComplete={() => {
-                setJob(null);
-                router.refresh();
-              }}
-            />
-          )}
-        </SheetContent>
-      </Sheet>
-
-      <Dialog open={!!selectedDocket} onOpenChange={(o) => !o && setSelectedDocket(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Delivery checklist</DialogTitle>
-          </DialogHeader>
-          {selectedDocket && (
-            <DeliveryChecklistComponent
-              docket={selectedDocket}
-              onComplete={() => {
-                setSelectedDocket(null);
-                router.refresh();
-              }}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+      <JobDrawer
+        job={job}
+        staff={staff}
+        onClose={() => setJob(null)}
+        onCompleted={() => {
+          setJob(null);
+          router.refresh();
+        }}
+      />
     </div>
   );
 }
@@ -361,241 +325,3 @@ function Tag({ icon, children }: { icon?: React.ReactNode; children: React.React
   );
 }
 
-type CheckKey =
-  | 'unitClean'
-  | 'doorsSealed'
-  | 'tempVerified'
-  | 'powerConnected'
-  | 'powerSupplyChecked'
-  | 'powerCableConnected'
-  | 'hitchLockSecured'
-  | 'wheelClampSecured'
-  | 'doorLockSecured';
-
-function checklistFor(job: JobWithDetails, type: JobType): { key: CheckKey; label: string }[] {
-  const acc = job.accessories;
-  if (type === 'delivery') {
-    return [
-      { key: 'unitClean', label: 'Unit cleaned and inspected' },
-      { key: 'doorsSealed', label: 'Door seals checked' },
-      { key: 'powerSupplyChecked', label: `Site power verified (${POWER_LABELS[job.powerAvailable]})` },
-      { key: 'powerCableConnected', label: `Power cable connected${job.cableLength ? ` (${job.cableLength})` : ''}` },
-      { key: 'powerConnected', label: 'Unit powered on and running' },
-      { key: 'tempVerified', label: `Temperature set to ${job.tempRequired}°C` },
-      ...(acc?.hitchLock ? [{ key: 'hitchLockSecured' as const, label: 'Hitch lock fitted' }] : []),
-      ...(acc?.wheelClamp ? [{ key: 'wheelClampSecured' as const, label: 'Wheel clamp fitted' }] : []),
-      ...(acc?.doorLock ? [{ key: 'doorLockSecured' as const, label: 'Door lock fitted' }] : []),
-    ];
-  }
-  return [
-    { key: 'powerConnected', label: 'Power disconnected and cable recovered' },
-    { key: 'unitClean', label: 'Unit emptied and cleaned out' },
-    { key: 'doorsSealed', label: 'Unit inspected for damage' },
-    { key: 'tempVerified', label: 'Condition photos taken' },
-    ...(acc?.hitchLock ? [{ key: 'hitchLockSecured' as const, label: 'Hitch lock recovered' }] : []),
-    ...(acc?.wheelClamp ? [{ key: 'wheelClampSecured' as const, label: 'Wheel clamp recovered' }] : []),
-    ...(acc?.doorLock ? [{ key: 'doorLockSecured' as const, label: 'Door lock recovered' }] : []),
-  ];
-}
-
-function JobSheet({ job, type, staff, onComplete }: { job: JobWithDetails; type: JobType; staff: Staff[]; onComplete: () => void }) {
-  const [isPending, startTransition] = useTransition();
-  const items = checklistFor(job, type);
-  const [checked, setChecked] = useState<Record<CheckKey, boolean>>({
-    unitClean: false,
-    doorsSealed: false,
-    tempVerified: false,
-    powerConnected: false,
-    powerSupplyChecked: false,
-    powerCableConnected: false,
-    hitchLockSecured: false,
-    wheelClampSecured: false,
-    doorLockSecured: false,
-  });
-  const [signature, setSignature] = useState('');
-  const [hasDamage, setHasDamage] = useState(false);
-  const [damageNotes, setDamageNotes] = useState('');
-
-  const done = items.filter((i) => checked[i.key]).length;
-  const ready = done === items.length && signature.trim().length > 0 && (!hasDamage || damageNotes.trim().length > 0);
-  const driver = staff.find((s) => s.role === 'DRIVER');
-  const isDelivery = type === 'delivery';
-
-  const handleConfirm = () => {
-    startTransition(async () => {
-      const payload = {
-        bookingId: job.id,
-        staffId: driver?.id || 'staff-01',
-        checklist: { ...checked, tempSetting: job.tempRequired, cableLengthUsed: job.cableLength },
-        tempSet: isDelivery ? job.tempRequired : 0,
-        signedBy: signature,
-        damageNotes: hasDamage ? damageNotes : undefined,
-        photoUrls: [],
-      };
-      const result = isDelivery ? await markDelivered(payload) : await markCollected(payload);
-      if (result.success) {
-        toast.success(isDelivery ? 'Delivery confirmed' : 'Collection confirmed', {
-          description: `${job.unit.id} is now ${isDelivery ? 'on hire' : 'available'}`,
-        });
-        onComplete();
-      } else {
-        toast.error(`Could not confirm ${type}`, { description: result.error });
-      }
-    });
-  };
-
-  return (
-    <>
-      <SheetHeader className="border-b px-5 py-4">
-        <div className="flex items-center gap-2">
-          <Pill tone={isDelivery ? 'scheduled' : 'warning'} showDot>
-            {isDelivery ? 'Delivery' : 'Collection'}
-          </Pill>
-          <span className="font-mono-unit text-xs text-muted-foreground">{job.id}</span>
-        </div>
-        <SheetTitle className="mt-1.5 flex items-center gap-2 text-lg font-semibold">
-          <UnitTypeIcon type={job.unit.unitType} className="size-5" />
-          <span className="font-mono-unit">{job.unit.id}</span>
-          <span className="font-normal text-muted-foreground">→</span>
-          <span className="truncate">{job.customer.name}</span>
-        </SheetTitle>
-        <SheetDescription>
-          {isDelivery
-            ? `${formatDayDate(job.startDate)}${job.deliveryTime ? ` at ${job.deliveryTime}` : ''}`
-            : `On hire since ${formatDate(job.startDate)} · due back ${formatDate(job.endDate)}`}
-        </SheetDescription>
-      </SheetHeader>
-
-      <div className="scrollbar-thin flex-1 space-y-6 overflow-y-auto px-5 py-5">
-        {/* Site */}
-        <div className="space-y-3">
-          <div className="rounded-md border p-3">
-            <div className="flex items-start gap-3">
-              <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-foreground">{job.deliveryAddress}</div>
-                {job.accessInstructions && <p className="mt-1 text-xs text-muted-foreground">{job.accessInstructions}</p>}
-              </div>
-            </div>
-            <div className="mt-3 flex items-center gap-3 border-t pt-3">
-              <div className="min-w-0 flex-1">
-                <div className="text-sm text-foreground">{job.contactName}</div>
-                <div className="tabular text-xs text-muted-foreground">{formatPhone(job.contactPhone)}</div>
-              </div>
-              <a href={`tel:${job.contactPhone}`} className="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium hover:bg-muted">
-                <Phone className="size-3.5" /> Call
-              </a>
-              <a
-                href={`https://maps.google.com/?q=${encodeURIComponent(job.deliveryAddress)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium hover:bg-muted"
-              >
-                <Navigation className="size-3.5" /> Navigate
-              </a>
-            </div>
-          </div>
-
-          {isDelivery && (
-            <div className="grid grid-cols-3 divide-x rounded-md border text-center">
-              <Spec label="Temperature" value={`${job.tempRequired}°C`} />
-              <Spec label="Power" value={job.powerAvailable === 'INDUSTRIAL' ? '32A' : '13A'} />
-              <Spec label="Cable" value={job.cableLength ?? '—'} />
-            </div>
-          )}
-        </div>
-
-        {/* Checklist */}
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-foreground">{isDelivery ? 'Handover checklist' : 'Collection checklist'}</h3>
-            <span className="tabular text-xs text-muted-foreground">
-              {done}/{items.length} complete
-            </span>
-          </div>
-          <div className="mb-3 h-1 overflow-hidden rounded-full bg-muted">
-            <div className="h-full bg-emerald-500 transition-all" style={{ width: `${(done / items.length) * 100}%` }} />
-          </div>
-          <ul className="divide-y rounded-md border">
-            {items.map((item) => {
-              const on = checked[item.key];
-              return (
-                <li key={item.key}>
-                  <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-muted/40">
-                    <input
-                      type="checkbox"
-                      className="peer sr-only"
-                      checked={on}
-                      onChange={(e) => setChecked((p) => ({ ...p, [item.key]: e.target.checked }))}
-                    />
-                    <span
-                      className={cn(
-                        'flex size-5 shrink-0 items-center justify-center rounded border transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-ring/50',
-                        on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-input bg-white'
-                      )}
-                    >
-                      {on && <Check className="size-3.5" strokeWidth={3} />}
-                    </span>
-                    <span className={cn('text-sm', on ? 'text-muted-foreground line-through decoration-muted-foreground/40' : 'text-foreground')}>
-                      {item.label}
-                    </span>
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-
-        {/* Damage */}
-        <div className="space-y-2">
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-            <input type="checkbox" checked={hasDamage} onChange={(e) => setHasDamage(e.target.checked)} className="size-4 accent-[var(--brand-red)]" />
-            <TriangleAlert className="size-4 text-amber-600" /> Report damage or issue
-          </label>
-          {hasDamage && (
-            <textarea
-              placeholder="Describe the damage, location on the unit and any customer comments"
-              value={damageNotes}
-              onChange={(e) => setDamageNotes(e.target.value)}
-              className="min-h-20 w-full resize-none rounded-lg border border-input px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            />
-          )}
-        </div>
-
-        {/* Sign-off */}
-        <label className="block space-y-1.5">
-          <span className="text-[13px] font-medium text-foreground">
-            Customer sign-off <span className="text-[var(--brand-red)]">*</span>
-          </span>
-          <Input placeholder="Full name of person signing" value={signature} onChange={(e) => setSignature(e.target.value)} className="h-9" />
-        </label>
-      </div>
-
-      <div className="flex items-center gap-2 border-t bg-white px-5 py-4">
-        <Link
-          href={`/bookings/${job.id}`}
-          className="inline-flex h-10 items-center gap-1.5 rounded-md border px-3 text-sm font-medium hover:bg-muted"
-        >
-          Booking <ArrowUpRight className="size-4" />
-        </Link>
-        <Button
-          onClick={handleConfirm}
-          disabled={!ready || isPending}
-          className={cn('h-10 flex-1 text-sm font-semibold', isDelivery ? 'hover:bg-[var(--brand-red-dark)]' : 'bg-emerald-600 hover:bg-emerald-700')}
-        >
-          <CircleCheck />
-          {isPending ? 'Confirming…' : isDelivery ? 'Confirm delivery' : 'Confirm collection'}
-        </Button>
-      </div>
-    </>
-  );
-}
-
-function Spec({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="px-3 py-2.5">
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className="tabular text-sm font-semibold text-foreground">{value}</div>
-    </div>
-  );
-}

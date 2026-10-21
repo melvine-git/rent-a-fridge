@@ -11,7 +11,7 @@ import { Field, selectClass, textareaClass } from '@/components/app/field';
 import { UNIT_TYPE_ICON } from '@/components/app/unit-type-icon';
 import { createBooking, getAvailableUnits, addCustomer, getCustomerAddresses, addCustomerAddress } from '@/lib/actions';
 import { POWER_LABELS, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS } from '@/lib/domain';
-import { daysBetween, formatDate } from '@/lib/format';
+import { daysBetween, formatDate, isValidW3w, normalizeW3w } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Check, Circle, Loader2, Plus, CalendarRange } from 'lucide-react';
 import type { Customer, Unit, UnitType, CableLength, BookingAccessories, CustomerAddress, PowerType } from '@/types';
@@ -35,6 +35,7 @@ interface FormData {
   contactPhone: string;
   deliveryAddress: string;
   deliveryAddressId: string;
+  what3wordsAddress: string;
   accessInstructions: string;
   tempRequired: string;
   powerAvailable: PowerType;
@@ -83,6 +84,7 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
       contactPhone: initialCustomer?.phone ?? '',
       deliveryAddress: initialCustomer?.address ?? '',
       deliveryAddressId: '',
+      what3wordsAddress: '',
       accessInstructions: '',
       tempRequired: prefs?.defaultTempRequired !== undefined ? String(prefs.defaultTempRequired) : '4',
       powerAvailable: 'STANDARD',
@@ -197,6 +199,7 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
     .filter((u) => unitTypeFilter === 'ALL' || u.unitType === unitTypeFilter)
     .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
 
+  const w3wInvalid = formData.what3wordsAddress.trim() !== '' && !isValidW3w(formData.what3wordsAddress);
   const selectedCustomer = customerList.find((c) => c.id === formData.customerId);
   const selectedUnit = allUnits.find((u) => u.id === formData.unitId);
   const selectedUnitBlocked = selectedUnit ? getUnitAvailability(selectedUnit).disabled : false;
@@ -205,7 +208,7 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
     { label: 'Customer selected', ok: !!formData.customerId },
     { label: 'Valid hire dates', ok: datesValid },
     { label: 'Available unit chosen', ok: !!formData.unitId && !selectedUnitBlocked },
-    { label: 'Site contact & address', ok: !!formData.contactName && !!formData.contactPhone && !!formData.deliveryAddress },
+    { label: 'Site contact & address', ok: !!formData.contactName && !!formData.contactPhone && !!formData.deliveryAddress && !w3wInvalid },
   ];
   const ready = checks.every((c) => c.ok);
 
@@ -227,6 +230,7 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
         contactPhone: formData.contactPhone,
         deliveryAddress: formData.deliveryAddress,
         deliveryAddressId: formData.deliveryAddressId || undefined,
+        what3wordsAddress: normalizeW3w(formData.what3wordsAddress),
         accessInstructions: formData.accessInstructions || undefined,
         tempRequired: parseInt(formData.tempRequired),
         powerAvailable: formData.powerAvailable,
@@ -408,14 +412,26 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
               </div>
             </div>
           </Field>
-          <Field label="Access instructions">
-            <Input
-              value={formData.accessInstructions}
-              onChange={(e) => updateField('accessInstructions', e.target.value)}
-              placeholder="e.g. Use rear gate, ring site manager on arrival"
-              className="h-9"
-            />
-          </Field>
+          <div className="grid gap-4 sm:grid-cols-[220px_1fr]">
+            <Field label="what3words location" hint={w3wInvalid ? undefined : 'Exact drop-off spot on site'}>
+              <Input
+                value={formData.what3wordsAddress}
+                onChange={(e) => updateField('what3wordsAddress', e.target.value)}
+                placeholder="///filled.count.soap"
+                className="h-9"
+                aria-invalid={w3wInvalid}
+              />
+              {w3wInvalid && <span className="block text-xs text-red-600">Use three words separated by dots</span>}
+            </Field>
+            <Field label="Access instructions">
+              <Input
+                value={formData.accessInstructions}
+                onChange={(e) => updateField('accessInstructions', e.target.value)}
+                placeholder="e.g. Use rear gate, ring site manager on arrival"
+                className="h-9"
+              />
+            </Field>
+          </div>
         </Section>
 
         {/* 4. Requirements */}

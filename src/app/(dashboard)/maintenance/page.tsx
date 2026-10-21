@@ -3,6 +3,7 @@ import {
   getMaintenanceDueNotifications,
   getUnitsInMaintenance,
   getServiceableComponents,
+  getServiceableComponentList,
   getAllBOMComponents,
   getAllUnits,
 } from '@/lib/actions';
@@ -12,11 +13,12 @@ import { PageHeader } from '@/components/app/page-header';
 export const dynamic = 'force-dynamic';
 
 export default async function MaintenancePage() {
-  const [maintenanceRecords, maintenanceDue, unitsInMaintenance, serviceableComponents, allComponents, allUnits] = await Promise.all([
+  const [maintenanceRecords, maintenanceDue, unitsInMaintenance, serviceableComponents, serviceList, allComponents, allUnits] = await Promise.all([
     getAllMaintenanceRecords(),
     getMaintenanceDueNotifications(),
     getUnitsInMaintenance(),
     getServiceableComponents(),
+    getServiceableComponentList(),
     getAllBOMComponents(),
     getAllUnits(),
   ]);
@@ -29,6 +31,7 @@ export default async function MaintenancePage() {
         maintenanceDue={maintenanceDue}
         unitsInMaintenance={unitsInMaintenance}
         serviceableComponents={serviceableComponents}
+        serviceList={serviceList}
         allComponents={allComponents}
         allUnits={allUnits}
       />

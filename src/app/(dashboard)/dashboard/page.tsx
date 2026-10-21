@@ -68,7 +68,7 @@ export default async function DashboardPage() {
     <div className="space-y-6">
       <PageHeader
         title={greeting()}
-        description={`${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · Here’s what’s happening across the fleet today.`}
+        description={`${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · Here’s what’s happening today.`}
       />
 
       {/* KPIs */}

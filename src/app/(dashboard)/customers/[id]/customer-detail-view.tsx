@@ -33,7 +33,13 @@ interface Props {
 export function CustomerDetailView({ customer, bookings, preferredUnit, units }: Props) {
   const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ name: customer.name, phone: customer.phone, email: customer.email || '', address: customer.address });
+  const [editForm, setEditForm] = useState({
+    name: customer.name,
+    phone: customer.phone,
+    email: customer.email || '',
+    address: customer.address,
+    xeroContactId: customer.xeroContactId || '',
+  });
   const [showAddAddress, setShowAddAddress] = useState(false);
   const [newAddress, setNewAddress] = useState({ label: '', address: '' });
   const [showPreferences, setShowPreferences] = useState(false);
@@ -45,7 +51,17 @@ export function CustomerDetailView({ customer, bookings, preferredUnit, units }:
   const hireDays = bookings.reduce((sum, b) => sum + daysBetween(b.startDate, b.endDate), 0);
 
   const handleSaveEdit = async () => {
-    const result = await updateCustomer(customer.id, editForm);
+    if (!editForm.name.trim() || !editForm.phone.trim() || !editForm.address.trim()) {
+      toast.error('Name, phone and invoice address are required');
+      return;
+    }
+    const result = await updateCustomer(customer.id, {
+      name: editForm.name.trim(),
+      phone: editForm.phone.trim(),
+      email: editForm.email.trim() || undefined,
+      address: editForm.address.trim(),
+      xeroContactId: editForm.xeroContactId.trim() || undefined,
+    });
     if (result.success) {
       setIsEditing(false);
       toast.success('Customer updated');
@@ -85,8 +101,8 @@ export function CustomerDetailView({ customer, bookings, preferredUnit, units }:
   };
 
   const openXero = () => {
-    if (customer.xeroContactId) window.open(`https://go.xero.com/Contacts/View/${customer.xeroContactId}`, '_blank', 'noopener');
-    else toast.info('No Xero contact linked', { description: 'Xero integration requires API setup' });
+    if (customer.xeroContactId) window.open(`https://go.xero.com/Contacts/View/${encodeURIComponent(customer.xeroContactId)}`, '_blank', 'noopener');
+    else setIsEditing(true);
   };
 
   const prefs = customer.preferences;
@@ -315,6 +331,14 @@ export function CustomerDetailView({ customer, bookings, preferredUnit, units }:
             </div>
             <Field label="Invoice address" required>
               <Input value={editForm.address} onChange={(e) => setEditForm((p) => ({ ...p, address: e.target.value }))} className="h-9" />
+            </Field>
+            <Field label="Xero contact ID" hint="From the contact's page in Xero (the ID at the end of the web address)">
+              <Input
+                value={editForm.xeroContactId}
+                onChange={(e) => setEditForm((p) => ({ ...p, xeroContactId: e.target.value }))}
+                placeholder="e.g. 7a4f2c1e-…"
+                className="h-9 font-mono"
+              />
             </Field>
           </div>
           <DialogFooter>

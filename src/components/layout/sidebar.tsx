@@ -12,8 +12,6 @@ import {
   Users,
   Box,
   Wrench,
-  Phone,
-  Mail,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -122,26 +120,6 @@ export function Sidebar({ isOpen, onClose, counts }: SidebarProps) {
           </div>
         ))}
       </nav>
-
-      <div className="shrink-0 border-t border-[var(--sidebar-border)] p-3">
-        <div className="rounded-md bg-white/[0.04] p-3">
-          <div className="text-xs font-medium text-stone-200">Andy Keery Refrigeration</div>
-          <div className="mt-2 space-y-1.5">
-            <a href="tel:+442892622633" className="flex items-center gap-2 text-xs text-stone-400 hover:text-white">
-              <Phone className="size-3.5" /> +44 28 9262 2633
-            </a>
-            <a href="mailto:info@rent-a-fridge.co.uk" className="flex items-center gap-2 text-xs text-stone-400 hover:text-white">
-              <Mail className="size-3.5" /> info@rent-a-fridge.co.uk
-            </a>
-          </div>
-        </div>
-        <p className="mt-3 px-1 text-[11px] text-stone-600">
-          © {new Date().getFullYear()} Andy Keery · Built by{' '}
-          <a href="https://mirality.co.uk" target="_blank" rel="noopener noreferrer" className="hover:text-stone-400">
-            Mirality
-          </a>
-        </p>
-      </div>
     </div>
   );
 

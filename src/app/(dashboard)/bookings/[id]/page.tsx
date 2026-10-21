@@ -9,9 +9,10 @@ import { UnitTypeIcon } from '@/components/app/unit-type-icon';
 import { StatusBadge, Pill } from '@/components/ui/status-badge';
 import { BookingActions } from './booking-actions';
 import { POWER_LABELS, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS } from '@/lib/domain';
-import { daysBetween, daysFromToday, formatDate, formatDayDate, formatPhone } from '@/lib/format';
+import { daysBetween, daysFromToday, formatDate, formatDayDate, formatPhone, w3wUrl } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { Check, Minus, Navigation, Phone, ArrowUpRight, CircleAlert } from 'lucide-react';
+import { Ban, Check, Minus, Navigation, Phone, ArrowUpRight, CircleAlert, ExternalLink } from 'lucide-react';
+import type { DeliveryDocket } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,34 +27,44 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   const { id } = await params;
   const data = await getBookingDetail(id);
   if (!data) notFound();
-  const { booking, delivery, collection, staff } = data;
+  const { booking, delivery, collection, staff, allStaff, units } = data;
   const { customer, unit } = booking;
 
   const days = daysBetween(booking.startDate, booking.endDate);
   const untilEnd = daysFromToday(booking.endDate);
   const untilStart = daysFromToday(booking.startDate);
-  const actionOverdue = booking.actionDate && booking.status !== 'COLLECTED' && daysFromToday(booking.actionDate) <= 0;
+  const isActive = booking.status === 'CONFIRMED' || booking.status === 'ON_HIRE';
+  const actionOverdue = booking.actionDate && isActive && daysFromToday(booking.actionDate) <= 0;
+  const cancelled = booking.status === 'CANCELLED';
+  const deliveryDone = delivery?.status === 'COMPLETED' ? delivery : undefined;
+  const collectionDone = collection?.status === 'COMPLETED' ? collection : undefined;
 
-  const steps: TimelineStep[] = [
-    { label: 'Booked', detail: formatDate(booking.createdAt, { year: true }), state: 'done' },
-    {
-      label: 'Delivered',
-      detail: delivery?.completedAt
-        ? `${formatDate(delivery.completedAt.split('T')[0])} · ${staff[delivery.staffId] ?? ''}${delivery.signedBy ? ` · signed by ${delivery.signedBy}` : ''}`
-        : `Scheduled ${formatDayDate(booking.startDate)}${booking.deliveryTime ? ` at ${booking.deliveryTime}` : ''}`,
-      state: booking.status === 'CONFIRMED' ? 'current' : 'done',
-    },
-    {
-      label: 'Collected',
-      detail: collection?.completedAt
-        ? `${formatDate(collection.completedAt.split('T')[0])}${collection.signedBy ? ` · signed by ${collection.signedBy}` : ''}`
-        : `Due ${formatDayDate(booking.endDate)}${booking.collectionTime ? ` at ${booking.collectionTime}` : ''}`,
-      state: booking.status === 'COLLECTED' ? 'done' : booking.status === 'ON_HIRE' ? 'current' : 'upcoming',
-    },
-  ];
+  const steps: TimelineStep[] = cancelled
+    ? [
+        { label: 'Booked', detail: formatDate(booking.createdAt, { year: true }), state: 'done' },
+        { label: 'Cancelled', detail: booking.cancelledAt ? formatDate(booking.cancelledAt.split('T')[0], { year: true }) : undefined, state: 'current' },
+      ]
+    : [
+        { label: 'Booked', detail: formatDate(booking.createdAt, { year: true }), state: 'done' },
+        {
+          label: 'Delivered',
+          detail: deliveryDone?.completedAt
+            ? `${formatDate(deliveryDone.completedAt.split('T')[0])} · ${staff[deliveryDone.staffId] ?? ''}${deliveryDone.signedBy ? ` · signed by ${deliveryDone.signedBy}` : ''}`
+            : `Scheduled ${formatDayDate(booking.startDate)}${booking.deliveryTime ? ` at ${booking.deliveryTime}` : ''}`,
+          state: booking.status === 'CONFIRMED' ? 'current' : 'done',
+        },
+        {
+          label: 'Collected',
+          detail: collectionDone?.completedAt
+            ? `${formatDate(collectionDone.completedAt.split('T')[0])}${collectionDone.signedBy ? ` · signed by ${collectionDone.signedBy}` : ''}`
+            : `Due ${formatDayDate(booking.endDate)}${booking.collectionTime ? ` at ${booking.collectionTime}` : ''}`,
+          state: booking.status === 'COLLECTED' ? 'done' : booking.status === 'ON_HIRE' ? 'current' : 'upcoming',
+        },
+      ];
 
-  const timing =
-    booking.status === 'CONFIRMED'
+  const timing = cancelled
+    ? `Cancelled${booking.cancelledAt ? ` on ${formatDate(booking.cancelledAt.split('T')[0], { year: true })}` : ''}`
+    : booking.status === 'CONFIRMED'
       ? untilStart > 0
         ? `Delivery in ${untilStart} day${untilStart > 1 ? 's' : ''}`
         : untilStart === 0
@@ -79,8 +90,18 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           </>
         }
         description={timing}
-        actions={<BookingActions email={customer.email} phone={booking.contactPhone} />}
+        actions={<BookingActions booking={booking} staff={allStaff} units={units} deliveredChecklist={deliveryDone?.checklist} />}
       />
+
+      {cancelled && (
+        <div className="flex items-start gap-3 rounded-[var(--radius-lg)] border border-red-200 bg-red-50/70 px-4 py-3">
+          <Ban className="mt-0.5 size-4 shrink-0 text-red-600" />
+          <div className="text-sm">
+            <span className="font-semibold text-red-900">This booking was cancelled</span>
+            {booking.cancellationReason && <span className="text-red-800/80"> · {booking.cancellationReason}</span>}
+          </div>
+        </div>
+      )}
 
       {actionOverdue && (
         <div className="flex items-start gap-3 rounded-[var(--radius-lg)] border border-red-200 bg-red-50/70 px-4 py-3">
@@ -111,7 +132,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
                   <Phone className="size-3.5" /> Call
                 </a>
                 <a
-                  href={`https://maps.google.com/?q=${encodeURIComponent(booking.deliveryAddress)}`}
+                  href={booking.what3wordsAddress ? w3wUrl(booking.what3wordsAddress) : `https://maps.google.com/?q=${encodeURIComponent(booking.deliveryAddress)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium hover:bg-muted"
@@ -122,8 +143,15 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
             }
           >
             <DetailList cols={2}>
-              <DetailItem label="Delivery address" full>
-                {booking.deliveryAddress}
+              <DetailItem label="Delivery address">{booking.deliveryAddress}</DetailItem>
+              <DetailItem label="what3words">
+                {booking.what3wordsAddress ? (
+                  <a href={w3wUrl(booking.what3wordsAddress)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-[var(--brand-red)] hover:underline">
+                    {booking.what3wordsAddress} <ExternalLink className="size-3" />
+                  </a>
+                ) : (
+                  <span className="text-muted-foreground">Not set</span>
+                )}
               </DetailItem>
               <DetailItem label="Site contact">{booking.contactName}</DetailItem>
               <DetailItem label="Contact phone">
@@ -176,6 +204,15 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
               </ul>
             </div>
           </Panel>
+
+          {(deliveryDone || collectionDone) && (
+            <Panel title="Proof of delivery & collection" description="Signed records captured on site">
+              <div className="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+                <JobRecord title="Delivery" docket={deliveryDone} driver={deliveryDone && staff[deliveryDone.staffId]} />
+                <JobRecord title="Collection" docket={collectionDone} driver={collectionDone && staff[collectionDone.staffId]} />
+              </div>
+            </Panel>
+          )}
 
           {booking.notes && (
             <Panel title="Notes">
@@ -247,6 +284,66 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           </Panel>
         </div>
       </div>
+    </div>
+  );
+}
+
+function JobRecord({ title, docket, driver }: { title: string; docket?: DeliveryDocket; driver?: string }) {
+  if (!docket) {
+    return (
+      <div className="p-4">
+        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</div>
+        <p className="mt-2 text-sm text-muted-foreground">Not yet completed</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3 p-4">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</span>
+        <Pill tone="success">Completed</Pill>
+      </div>
+      {docket.signatureData ? (
+        // eslint-disable-next-line @next/next/no-img-element -- data URL captured on site, not an optimisable asset
+        <img src={docket.signatureData} alt={`Signature of ${docket.signedBy}`} className="h-20 w-full rounded-md border bg-white object-contain" />
+      ) : (
+        <div className="flex h-20 items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground">No drawn signature on file</div>
+      )}
+      <dl className="space-y-1 text-sm">
+        <div className="flex justify-between gap-3">
+          <dt className="text-muted-foreground">Signed by</dt>
+          <dd className="text-right font-medium text-foreground">{docket.signedBy || '—'}</dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="text-muted-foreground">When</dt>
+          <dd className="tabular text-right text-foreground">
+            {docket.completedAt
+              ? new Date(docket.completedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+              : '—'}
+          </dd>
+        </div>
+        {driver && (
+          <div className="flex justify-between gap-3">
+            <dt className="text-muted-foreground">Driver</dt>
+            <dd className="text-right text-foreground">{driver}</dd>
+          </div>
+        )}
+        {docket.what3wordsAddress && (
+          <div className="flex justify-between gap-3">
+            <dt className="text-muted-foreground">Location</dt>
+            <dd className="text-right">
+              <a href={w3wUrl(docket.what3wordsAddress)} target="_blank" rel="noopener noreferrer" className="font-medium text-[var(--brand-red)] hover:underline">
+                {docket.what3wordsAddress}
+              </a>
+            </dd>
+          </div>
+        )}
+      </dl>
+      {docket.damageNotes && (
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-600/15 ring-inset">
+          <span className="font-semibold">Damage reported:</span> {docket.damageNotes}
+        </p>
+      )}
     </div>
   );
 }

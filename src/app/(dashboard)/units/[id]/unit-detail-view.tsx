@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/app/empty-state';
 import { TabBar } from '@/components/app/tab-bar';
 import { Field, selectClass, textareaClass } from '@/components/app/field';
 import { UnitTypeIcon } from '@/components/app/unit-type-icon';
+import { UnitPhotos } from './unit-photos';
 import { updateUnit, updateUnitSpecifications, addBOMComponent, removeBOMComponent, addMaintenanceRecord, setUnitStatus } from '@/lib/actions';
 import { COMPONENT_LABELS, GBP, POWER_LABELS, RECORD_TYPE_META, STATUS_META, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS } from '@/lib/domain';
 import { daysBetween, daysFromToday, formatDate, toISODate } from '@/lib/format';
@@ -42,7 +43,13 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) 
   const [showAddBOM, setShowAddBOM] = useState(false);
   const [showAddMaintenance, setShowAddMaintenance] = useState(false);
 
-  const [editForm, setEditForm] = useState({ size: unit.size, powerType: unit.powerType, unitType: unit.unitType, notes: unit.notes || '' });
+  const [editForm, setEditForm] = useState({
+    size: unit.size,
+    powerType: unit.powerType,
+    unitType: unit.unitType,
+    notes: unit.notes || '',
+    dataLoggerId: unit.dataLoggerId || '',
+  });
   const s = unit.specifications;
   const [specsForm, setSpecsForm] = useState({
     extLength: s?.externalDimensions?.length?.toString() || '',
@@ -64,7 +71,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) 
   };
 
   const handleSaveEdit = async () => {
-    const r = await updateUnit(unit.id, editForm);
+    const r = await updateUnit(unit.id, { ...editForm, notes: editForm.notes.trim() || undefined, dataLoggerId: editForm.dataLoggerId.trim() || undefined });
     if (r.success) {
       setIsEditing(false);
       done('Unit updated');
@@ -229,7 +236,6 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) 
                 <DetailItem label="Chassis number">
                   {s.chassisNumber ? <span className="font-mono">{s.chassisNumber}</span> : <span className="text-muted-foreground">Not specified</span>}
                 </DetailItem>
-                <DetailItem label="Photos">{s.photoUrls?.length ? `${s.photoUrls.length} photos` : <span className="text-muted-foreground">None uploaded</span>}</DetailItem>
               </DetailList>
             ) : (
               <EmptyState
@@ -250,9 +256,15 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) 
               <DetailItem label="Unit type">{UNIT_TYPE_LABELS[unit.unitType]}</DetailItem>
               <DetailItem label="Size">{UNIT_SIZE_LABELS[unit.size]}</DetailItem>
               <DetailItem label="Power">{POWER_LABELS[unit.powerType]}</DetailItem>
+              <DetailItem label="Data logger ID">
+                {unit.dataLoggerId ? <span className="font-mono">{unit.dataLoggerId}</span> : <span className="text-muted-foreground">Not set</span>}
+              </DetailItem>
               <DetailItem label="Notes">{unit.notes || <span className="text-muted-foreground">No notes</span>}</DetailItem>
             </DetailList>
           </Panel>
+          <div className="lg:col-span-3">
+            <UnitPhotos unitId={unit.id} photos={s?.photoUrls ?? []} />
+          </div>
         </div>
       )}
 
@@ -389,7 +401,9 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) 
                 <div className="truncate font-mono text-xs text-muted-foreground">{unit.dataLoggerId || 'Not configured'}</div>
               </div>
             </div>
-            <p className="border-t px-4 py-3 text-xs text-muted-foreground">Integration with the external data logger platform is pending configuration.</p>
+            <p className="border-t px-4 py-3 text-xs text-muted-foreground">
+              {unit.dataLoggerId ? 'Live readings will appear here once the data logger platform is connected.' : 'Set the logger ID under Edit so readings can be linked when the integration is connected.'}
+            </p>
           </Panel>
         </div>
       )}
@@ -430,6 +444,9 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) 
                 </select>
               </Field>
             </div>
+            <Field label="Data logger ID" hint="The device ID from your data logger software">
+              <Input value={editForm.dataLoggerId} onChange={(e) => setEditForm((p) => ({ ...p, dataLoggerId: e.target.value }))} placeholder="e.g. DL-2041" className="h-9 font-mono" />
+            </Field>
             <Field label="Notes">
               <textarea value={editForm.notes} onChange={(e) => setEditForm((p) => ({ ...p, notes: e.target.value }))} className={textareaClass} />
             </Field>

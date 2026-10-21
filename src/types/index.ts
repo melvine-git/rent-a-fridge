@@ -1,7 +1,7 @@
 // Core domain types for Rent-a-Fridge operations
 
 export type UnitStatus = 'AVAILABLE' | 'ON_HIRE' | 'MAINTENANCE';
-export type BookingStatus = 'CONFIRMED' | 'ON_HIRE' | 'COLLECTED';
+export type BookingStatus = 'CONFIRMED' | 'ON_HIRE' | 'COLLECTED' | 'CANCELLED';
 export type UnitSize = 'SMALL' | 'MEDIUM' | 'LARGE';
 export type PowerType = 'STANDARD' | 'INDUSTRIAL';
 export type UnitType = 'COLD_STORE' | 'UPRIGHT_FRIDGE' | 'CHEST_FREEZER';
@@ -117,6 +117,7 @@ export interface Booking {
   contactPhone: string;
   deliveryAddress: string;
   deliveryAddressId?: string; // Reference to CustomerAddress
+  what3wordsAddress?: string; // ///word.word.word for the exact drop-off spot
   accessInstructions?: string;
   tempRequired: number; // celsius
   powerAvailable: PowerType;
@@ -129,6 +130,16 @@ export interface Booking {
   collectionDocketId?: string;
   emailSent?: boolean;
   smsSent?: boolean;
+  cancelledAt?: string; // ISO timestamp
+  cancellationReason?: string;
+}
+
+export interface ServiceableComponent {
+  id: string;
+  type: BOMComponent['type'];
+  name: string;
+  description?: string;
+  intervalMonths: number;
 }
 
 export interface DeliveryChecklist {
@@ -171,6 +182,7 @@ export interface Database {
   units: Unit[];
   bookings: Booking[];
   dockets: DeliveryDocket[];
+  serviceableComponents?: ServiceableComponent[];
 }
 
 // Input types for actions
@@ -187,6 +199,7 @@ export interface CreateBookingInput {
   contactPhone: string;
   deliveryAddress: string;
   deliveryAddressId?: string;
+  what3wordsAddress?: string;
   accessInstructions?: string;
   tempRequired: number;
   powerAvailable: PowerType;
@@ -196,6 +209,8 @@ export interface CreateBookingInput {
   notes?: string;
 }
 
+export type UpdateBookingInput = Partial<Omit<CreateBookingInput, 'customerId'>>;
+
 export interface MarkDeliveredInput {
   bookingId: string;
   staffId: string;
@@ -203,18 +218,12 @@ export interface MarkDeliveredInput {
   tempSet: number;
   damageNotes?: string;
   signedBy: string;
+  signatureData?: string;
+  what3wordsAddress?: string;
   photoUrls: string[];
 }
 
-export interface MarkCollectedInput {
-  bookingId: string;
-  staffId: string;
-  checklist: DeliveryDocket['checklist'];
-  tempSet: number;
-  damageNotes?: string;
-  signedBy: string;
-  photoUrls: string[];
-}
+export type MarkCollectedInput = MarkDeliveredInput;
 
 export interface UnitSpec {
   size?: UnitSize;

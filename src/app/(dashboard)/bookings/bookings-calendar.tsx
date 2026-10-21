@@ -34,6 +34,7 @@ const BAR_STYLES: Record<Booking['status'], string> = {
   CONFIRMED: 'bg-violet-100 text-violet-900 border-violet-500 hover:bg-violet-200/80',
   ON_HIRE: 'bg-sky-100 text-sky-900 border-sky-500 hover:bg-sky-200/80',
   COLLECTED: 'bg-stone-100 text-stone-700 border-stone-400 hover:bg-stone-200/80',
+  CANCELLED: 'bg-red-50 text-red-800 border-red-400 line-through hover:bg-red-100',
 };
 
 const DAY_MS = 86_400_000;
