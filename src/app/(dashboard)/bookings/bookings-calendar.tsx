@@ -1,307 +1,406 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Card, CardContent } from '@/components/ui/card';
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ChevronLeft, ChevronRight, Phone, MapPin, Thermometer, Zap, CalendarDays } from 'lucide-react';
-import type { Booking, Customer, Unit } from '@/types';
-
-type BookingWithDetails = Booking & { customer: Customer; unit: Unit };
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { SegmentedControl } from '@/components/app/segmented-control';
+import { EmptyState } from '@/components/app/empty-state';
+import { UnitTypeIcon, UNIT_TYPE_ICON } from '@/components/app/unit-type-icon';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Phone,
+  MapPin,
+  Thermometer,
+  Zap,
+  CalendarSearch,
+  ArrowUpRight,
+  User,
+  CalendarRange,
+} from 'lucide-react';
+import type { Booking, Unit, UnitStatus, UnitType, CalendarView, BookingWithDetails } from '@/types';
+import { cn } from '@/lib/utils';
+import { POWER_LABELS, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS } from '@/lib/domain';
+import { daysBetween, formatDate, formatDateRange, formatPhone, toISODate } from '@/lib/format';
 
 interface BookingsCalendarProps {
   bookings: BookingWithDetails[];
+  allUnits: Unit[];
 }
 
-const statusColors: Record<string, { bg: string; text: string; border: string }> = {
-  CONFIRMED: { bg: 'bg-purple-500', text: 'text-white', border: 'border-purple-600' },
-  ON_HIRE: { bg: 'bg-blue-500', text: 'text-white', border: 'border-blue-600' },
-  COLLECTED: { bg: 'bg-gray-400', text: 'text-white', border: 'border-gray-500' },
+const BAR_STYLES: Record<Booking['status'], string> = {
+  CONFIRMED: 'bg-violet-100 text-violet-900 border-violet-500 hover:bg-violet-200/80',
+  ON_HIRE: 'bg-sky-100 text-sky-900 border-sky-500 hover:bg-sky-200/80',
+  COLLECTED: 'bg-stone-100 text-stone-700 border-stone-400 hover:bg-stone-200/80',
 };
 
-export function BookingsCalendar({ bookings }: BookingsCalendarProps) {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedBooking, setSelectedBooking] = useState<BookingWithDetails | null>(null);
-  const [hoveredBooking, setHoveredBooking] = useState<string | null>(null);
+const DAY_MS = 86_400_000;
 
-  const startOfWeek = useMemo(() => {
-    const d = new Date(currentDate);
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    d.setDate(diff);
-    return d;
-  }, [currentDate]);
+function mondayOf(d: Date) {
+  const r = new Date(d);
+  r.setHours(0, 0, 0, 0);
+  const day = r.getDay();
+  r.setDate(r.getDate() - day + (day === 0 ? -6 : 1));
+  return r;
+}
 
-  const days = useMemo(() => {
-    const result = [];
-    for (let i = 0; i < 14; i++) {
-      const d = new Date(startOfWeek);
-      d.setDate(d.getDate() + i);
-      result.push(d);
-    }
-    return result;
-  }, [startOfWeek]);
+export function BookingsCalendar({ bookings, allUnits }: BookingsCalendarProps) {
+  const [anchor, setAnchor] = useState(() => mondayOf(new Date()));
+  const [selected, setSelected] = useState<BookingWithDetails | null>(null);
+  const [calendarView, setCalendarView] = useState<CalendarView>('week');
+  const [statusFilter, setStatusFilter] = useState<UnitStatus | 'ALL'>('ALL');
+  const [unitTypeFilter, setUnitTypeFilter] = useState<UnitType | 'ALL'>('ALL');
 
-  const units = useMemo(() => {
-    const unitMap = new Map<string, Unit>();
-    bookings.forEach(b => unitMap.set(b.unit.id, b.unit));
-    return Array.from(unitMap.values()).sort((a, b) => a.id.localeCompare(b.id));
+  const numDays = calendarView === 'month' ? 28 : 14;
+  const todayISO = toISODate(new Date());
+
+  const days = useMemo(
+    () =>
+      Array.from({ length: numDays }, (_, i) => {
+        const d = new Date(anchor);
+        d.setDate(d.getDate() + i);
+        return d;
+      }),
+    [anchor, numDays]
+  );
+
+  const filteredUnits = useMemo(
+    () =>
+      allUnits
+        .filter((u) => (statusFilter === 'ALL' || u.status === statusFilter) && (unitTypeFilter === 'ALL' || u.unitType === unitTypeFilter))
+        .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })),
+    [allUnits, statusFilter, unitTypeFilter]
+  );
+
+  const bookingsByUnit = useMemo(() => {
+    const map = new Map<string, BookingWithDetails[]>();
+    for (const b of bookings) map.set(b.unitId, [...(map.get(b.unitId) ?? []), b]);
+    return map;
   }, [bookings]);
 
-  const getBookingsForUnit = (unitId: string) => {
-    return bookings.filter(b => b.unitId === unitId);
+  const counts = useMemo(
+    () => ({
+      ALL: allUnits.length,
+      AVAILABLE: allUnits.filter((u) => u.status === 'AVAILABLE').length,
+      ON_HIRE: allUnits.filter((u) => u.status === 'ON_HIRE').length,
+      MAINTENANCE: allUnits.filter((u) => u.status === 'MAINTENANCE').length,
+    }),
+    [allUnits]
+  );
+
+  const shift = (dir: number) => {
+    const d = new Date(anchor);
+    d.setDate(d.getDate() + dir * (calendarView === 'month' ? 28 : 7));
+    setAnchor(d);
   };
 
-  const navigateWeek = (direction: number) => {
-    const newDate = new Date(currentDate);
-    newDate.setDate(newDate.getDate() + direction * 7);
-    setCurrentDate(newDate);
-  };
-
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-  };
-
-  const isToday = (date: Date) => {
-    const today = new Date();
-    return date.toDateString() === today.toDateString();
-  };
-
-  const isWeekend = (date: Date) => {
-    const day = date.getDay();
-    return day === 0 || day === 6;
-  };
+  const todayIndex = days.findIndex((d) => toISODate(d) === todayISO);
+  const colWidth = 100 / numDays;
 
   return (
     <>
-      <Card className="overflow-hidden rounded-xl sm:rounded-2xl border-0 shadow-[var(--shadow-md)] bg-white">
-        {/* Calendar Header */}
-        <div className="border-b border-[var(--warm-gray-200)] bg-gradient-to-r from-white to-[var(--warm-gray-50)] p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <CalendarDays className="h-5 w-5 text-[var(--warm-gray-500)] hidden sm:block" />
-              <h2 className="text-base sm:text-lg font-semibold text-[var(--charcoal)]">Resource Timeline</h2>
-            </div>
-            <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-3">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => navigateWeek(-1)}
-                className="rounded-lg sm:rounded-xl border-[var(--warm-gray-200)] hover:bg-[var(--warm-gray-100)] h-8 w-8 sm:h-9 sm:w-9 p-0"
-              >
-                <ChevronLeft className="h-4 w-4" />
+      <section className="surface overflow-hidden">
+        {/* Toolbar */}
+        <div className="flex flex-col gap-3 border-b px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center rounded-md border">
+              <Button variant="ghost" size="icon" onClick={() => shift(-1)} aria-label="Previous period" className="rounded-r-none">
+                <ChevronLeft />
               </Button>
-              <span className="text-xs sm:text-sm font-semibold min-w-[140px] sm:min-w-[180px] text-center text-[var(--charcoal)]">
-                {formatDate(days[0])} — {formatDate(days[13])}
-              </span>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => navigateWeek(1)}
-                className="rounded-lg sm:rounded-xl border-[var(--warm-gray-200)] hover:bg-[var(--warm-gray-100)] h-8 w-8 sm:h-9 sm:w-9 p-0"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => setCurrentDate(new Date())}
-                className="rounded-lg sm:rounded-xl border-[var(--warm-gray-200)] hover:bg-[var(--warm-gray-100)] h-8 sm:h-9 px-3 sm:px-4 font-medium text-xs sm:text-sm"
-              >
+              <Button variant="ghost" onClick={() => setAnchor(mondayOf(new Date()))} className="h-8 rounded-none border-x px-3 text-[13px]">
                 Today
               </Button>
+              <Button variant="ghost" size="icon" onClick={() => shift(1)} aria-label="Next period" className="rounded-l-none">
+                <ChevronRight />
+              </Button>
             </div>
+            <h2 className="tabular min-w-[150px] px-1 text-sm font-semibold text-foreground">
+              {formatDateRange(days[0], days[days.length - 1])}
+            </h2>
+            <SegmentedControl
+              size="sm"
+              value={calendarView}
+              onChange={setCalendarView}
+              ariaLabel="Range"
+              options={[
+                { value: 'week', label: '2 weeks' },
+                { value: 'month', label: '4 weeks' },
+              ]}
+            />
           </div>
-          
-          {/* Legend */}
-          <div className="flex flex-wrap gap-3 sm:gap-6 mt-3 sm:mt-4">
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-purple-500" />
-              <span className="text-[10px] sm:text-xs font-medium text-[var(--warm-gray-600)]">Confirmed</span>
-            </div>
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-blue-500" />
-              <span className="text-[10px] sm:text-xs font-medium text-[var(--warm-gray-600)]">On Hire</span>
-            </div>
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-gray-400" />
-              <span className="text-[10px] sm:text-xs font-medium text-[var(--warm-gray-600)]">Collected</span>
-            </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <SegmentedControl
+              size="sm"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              ariaLabel="Unit status"
+              options={[
+                { value: 'ALL', label: 'All units', count: counts.ALL },
+                { value: 'AVAILABLE', label: 'Available', count: counts.AVAILABLE },
+                { value: 'ON_HIRE', label: 'On hire', count: counts.ON_HIRE },
+                { value: 'MAINTENANCE', label: 'Service', count: counts.MAINTENANCE },
+              ]}
+            />
+            <SegmentedControl
+              size="sm"
+              value={unitTypeFilter}
+              onChange={setUnitTypeFilter}
+              ariaLabel="Unit type"
+              options={[
+                { value: 'ALL', label: 'All types' },
+                ...(Object.keys(UNIT_TYPE_LABELS) as UnitType[]).map((t) => {
+                  const Icon = UNIT_TYPE_ICON[t];
+                  return { value: t, label: <span className="hidden sm:inline">{UNIT_TYPE_LABELS[t]}</span>, icon: <Icon className="size-3.5" /> };
+                }),
+              ]}
+            />
           </div>
         </div>
 
-        <CardContent className="p-0">
-          <div className="overflow-x-auto -webkit-overflow-scrolling-touch">
-            <div className="min-w-[800px] sm:min-w-[1000px]">
-              {/* Header row with dates */}
-              <div className="flex border-b border-[var(--warm-gray-200)] bg-[var(--warm-gray-50)]">
-                <div className="w-20 sm:w-28 flex-shrink-0 p-2 sm:p-3 border-r border-[var(--warm-gray-200)] font-semibold text-[10px] sm:text-xs uppercase tracking-wider text-[var(--warm-gray-500)]">
-                  Unit
-                </div>
-                {days.map((day, i) => (
-                  <div
-                    key={i}
-                    className={`flex-1 py-3 px-1 text-center border-r border-[var(--warm-gray-200)] last:border-r-0 transition-colors ${
-                      isToday(day) ? 'bg-[var(--brand-red)]/10' : isWeekend(day) ? 'bg-[var(--warm-gray-100)]' : ''
-                    }`}
-                  >
-                    <div className={`text-[8px] sm:text-[10px] uppercase tracking-wider font-medium ${isWeekend(day) ? 'text-[var(--warm-gray-400)]' : 'text-[var(--warm-gray-500)]'}`}>
-                      {day.toLocaleDateString('en-GB', { weekday: 'short' })}
-                    </div>
-                    <div className={`text-xs sm:text-sm font-bold mt-0.5 ${isToday(day) ? 'text-[var(--brand-red)]' : 'text-[var(--charcoal)]'}`}>
-                      {day.getDate()}
-                    </div>
-                  </div>
-                ))}
+        {/* Grid */}
+        <div className="scrollbar-thin overflow-x-auto">
+          <div className={cn(calendarView === 'month' ? 'min-w-[1200px]' : 'min-w-[960px]')}>
+            {/* Header */}
+            <div className="sticky top-0 z-20 flex border-b bg-muted/40">
+              <div className="sticky left-0 z-10 flex w-44 shrink-0 items-end border-r bg-[#FAFAF9] px-4 pb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                Unit
               </div>
-
-              {/* Unit rows */}
-              {units.length === 0 ? (
-                <div className="p-12 text-center">
-                  <div className="text-4xl mb-3">📅</div>
-                  <div className="text-[var(--warm-gray-500)] font-medium">No bookings to display</div>
-                  <div className="text-sm text-[var(--warm-gray-400)] mt-1">Create a booking to see it here</div>
-                </div>
-              ) : (
-                units.map((unit) => (
-                  <motion.div 
-                    key={unit.id} 
-                    className="flex border-b border-[var(--warm-gray-100)] last:border-b-0 hover:bg-[var(--warm-gray-50)]/50 transition-colors"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                  >
-                    <div className="w-20 sm:w-28 flex-shrink-0 p-2 sm:p-3 border-r border-[var(--warm-gray-200)] flex items-center">
-                      <span className="font-mono-unit text-xs sm:text-sm text-[var(--charcoal)]">{unit.id}</span>
+              <div className="flex flex-1">
+                {days.map((day, i) => {
+                  const isToday = i === todayIndex;
+                  const weekend = day.getDay() === 0 || day.getDay() === 6;
+                  const monthStart = day.getDate() === 1 || i === 0;
+                  return (
+                    <div
+                      key={i}
+                      className={cn(
+                        'relative flex flex-1 flex-col items-center border-r py-2 last:border-r-0',
+                        weekend && 'bg-muted/60',
+                        day.getDay() === 1 && i > 0 && 'border-l border-l-border'
+                      )}
+                    >
+                      {monthStart && (
+                        <span className="absolute top-0.5 left-1.5 text-[10px] font-semibold uppercase text-muted-foreground/80">
+                          {day.toLocaleDateString('en-GB', { month: 'short' })}
+                        </span>
+                      )}
+                      <span className="mt-2.5 text-[10px] font-medium uppercase text-muted-foreground">
+                        {day.toLocaleDateString('en-GB', { weekday: 'short' }).slice(0, calendarView === 'month' ? 1 : 3)}
+                      </span>
+                      <span
+                        className={cn(
+                          'tabular mt-0.5 flex size-6 items-center justify-center rounded-full text-xs font-semibold',
+                          isToday ? 'bg-[var(--brand-red)] text-white' : 'text-foreground'
+                        )}
+                      >
+                        {day.getDate()}
+                      </span>
                     </div>
-                    <div className="flex-1 flex relative h-12 sm:h-14">
-                      {days.map((_, dayIndex) => (
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Rows */}
+            {filteredUnits.length === 0 ? (
+              <EmptyState
+                icon={CalendarSearch}
+                title="No units match these filters"
+                description="Try a different status or unit type."
+                action={
+                  <Button variant="outline" onClick={() => { setStatusFilter('ALL'); setUnitTypeFilter('ALL'); }}>
+                    Clear filters
+                  </Button>
+                }
+              />
+            ) : (
+              filteredUnits.map((unit) => {
+                const inService = unit.status === 'MAINTENANCE';
+                return (
+                  <div key={unit.id} className="group flex border-b last:border-b-0">
+                    <Link
+                      href={`/units/${unit.id}`}
+                      className="sticky left-0 z-10 flex w-44 shrink-0 items-center gap-3 border-r bg-white px-4 py-2 group-hover:bg-[#FAFAF9]"
+                    >
+                      <UnitTypeIcon type={unit.unitType} />
+                      <div className="min-w-0">
+                        <div className="font-mono-unit text-[13px] text-foreground">{unit.id}</div>
+                        <div className="truncate text-[11px] text-muted-foreground">
+                          {inService ? 'In service' : `${UNIT_SIZE_LABELS[unit.size]} · ${unit.powerType === 'INDUSTRIAL' ? '32A' : '13A'}`}
+                        </div>
+                      </div>
+                    </Link>
+                    <div className={cn('relative flex h-14 flex-1', inService && 'bg-hatch')}>
+                      {days.map((day, i) => (
                         <div
-                          key={dayIndex}
-                          className={`flex-1 border-r border-[var(--warm-gray-100)] last:border-r-0 ${
-                            isToday(days[dayIndex]) ? 'bg-[var(--brand-red)]/5' : isWeekend(days[dayIndex]) ? 'bg-[var(--warm-gray-50)]' : ''
-                          }`}
+                          key={i}
+                          className={cn(
+                            'flex-1 border-r border-border/60 last:border-r-0',
+                            (day.getDay() === 0 || day.getDay() === 6) && 'bg-muted/40',
+                            day.getDay() === 1 && i > 0 && 'border-l border-l-border'
+                          )}
                         />
                       ))}
-                      {/* Booking bars */}
-                      {getBookingsForUnit(unit.id).map((booking) => {
-                        const startDate = new Date(booking.startDate);
-                        const endDate = new Date(booking.endDate);
-                        
-                        const startIndex = days.findIndex(d => d.toDateString() === startDate.toDateString());
-                        const endIndex = days.findIndex(d => d.toDateString() === endDate.toDateString());
-                        
-                        if (startIndex === -1 && endIndex === -1) {
-                          if (startDate < days[0] && endDate > days[13]) {
-                            return (
-                              <motion.div
-                                key={booking.id}
-                                initial={{ opacity: 0, scaleX: 0.9 }}
-                                animate={{ opacity: 1, scaleX: 1 }}
-                                whileHover={{ scale: 1.02, zIndex: 20 }}
-                                className={`absolute top-2 bottom-2 left-1 right-1 ${statusColors[booking.status].bg} rounded-xl cursor-pointer flex items-center px-3 shadow-sm ${
-                                  hoveredBooking === booking.id ? 'ring-2 ring-offset-2 ring-[var(--charcoal)] shadow-lg' : ''
-                                }`}
-                                onMouseEnter={() => setHoveredBooking(booking.id)}
-                                onMouseLeave={() => setHoveredBooking(null)}
-                                onClick={() => setSelectedBooking(booking)}
-                              >
-                                <span className="text-xs text-white font-semibold truncate">
-                                  {booking.customer.name}
-                                </span>
-                              </motion.div>
-                            );
-                          }
-                          return null;
-                        }
-
-                        const actualStart = startIndex === -1 ? 0 : startIndex;
-                        const actualEnd = endIndex === -1 ? 13 : endIndex;
-                        const cellWidth = 100 / 14;
-                        const left = `calc(${actualStart * cellWidth}% + 2px)`;
-                        const width = `calc(${(actualEnd - actualStart + 1) * cellWidth}% - 4px)`;
-
+                      {todayIndex >= 0 && (
+                        <div
+                          className="pointer-events-none absolute inset-y-0 z-[5] w-px bg-[var(--brand-red)]/50"
+                          style={{ left: `${(todayIndex + 0.5) * colWidth}%` }}
+                        />
+                      )}
+                      {(bookingsByUnit.get(unit.id) ?? []).map((b) => {
+                        const start = new Date(`${b.startDate}T00:00:00`);
+                        const end = new Date(`${b.endDate}T00:00:00`);
+                        const s = Math.round((start.getTime() - days[0].getTime()) / DAY_MS);
+                        const e = Math.round((end.getTime() - days[0].getTime()) / DAY_MS);
+                        if (e < 0 || s > numDays - 1) return null;
+                        const cs = Math.max(0, s);
+                        const ce = Math.min(numDays - 1, e);
+                        const span = ce - cs + 1;
+                        const clippedL = s < 0;
+                        const clippedR = e > numDays - 1;
                         return (
-                          <motion.div
-                            key={booking.id}
-                            initial={{ opacity: 0, scaleX: 0.9 }}
-                            animate={{ opacity: 1, scaleX: 1 }}
-                            whileHover={{ scale: 1.02, zIndex: 20 }}
-                            className={`absolute top-2 bottom-2 ${statusColors[booking.status].bg} cursor-pointer flex items-center px-3 rounded-xl shadow-sm transition-shadow ${
-                              hoveredBooking === booking.id ? 'ring-2 ring-offset-2 ring-[var(--charcoal)] shadow-lg' : ''
-                            }`}
-                            style={{ left, width }}
-                            onMouseEnter={() => setHoveredBooking(booking.id)}
-                            onMouseLeave={() => setHoveredBooking(null)}
-                            onClick={() => setSelectedBooking(booking)}
+                          <button
+                            key={b.id}
+                            onClick={() => setSelected(b)}
+                            title={`${b.customer.name} · ${formatDateRange(b.startDate, b.endDate)}`}
+                            className={cn(
+                              'absolute top-2 bottom-2 z-[6] flex min-w-0 flex-col justify-center overflow-hidden border-l-[3px] px-2 text-left shadow-[var(--shadow-xs)] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                              BAR_STYLES[b.status],
+                              clippedL ? 'rounded-l-none border-l-0 pl-2.5' : 'rounded-l-md',
+                              clippedR ? 'rounded-r-none' : 'rounded-r-md'
+                            )}
+                            style={{ left: `calc(${cs * colWidth}% + 2px)`, width: `calc(${span * colWidth}% - 4px)` }}
                           >
-                            <span className="text-xs text-white font-semibold truncate">
-                              {booking.customer.name}
-                            </span>
-                          </motion.div>
+                            <span className="truncate text-xs font-semibold leading-tight">{b.customer.name}</span>
+                            {span >= 3 && (
+                              <span className="tabular truncate text-[10px] leading-tight opacity-75">
+                                {formatDateRange(b.startDate, b.endDate)}
+                              </span>
+                            )}
+                          </button>
                         );
                       })}
                     </div>
-                  </motion.div>
-                ))
-              )}
-            </div>
+                  </div>
+                );
+              })
+            )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Booking Details Dialog */}
-      <Dialog open={!!selectedBooking} onOpenChange={() => setSelectedBooking(null)}>
-        <DialogContent className="sm:max-w-md rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-3">
-              <span className="font-mono-unit">{selectedBooking?.id}</span>
-              {selectedBooking && <StatusBadge status={selectedBooking.status} />}
-            </DialogTitle>
-          </DialogHeader>
-          {selectedBooking && (
-            <div className="space-y-5">
-              <div className="p-4 bg-[var(--warm-gray-50)] rounded-xl">
-                <h4 className="font-semibold text-[var(--charcoal)] text-lg">{selectedBooking.customer.name}</h4>
-                <p className="text-sm text-[var(--warm-gray-500)] mt-1">
-                  Unit: <span className="font-mono-unit">{selectedBooking.unit.id}</span> ({selectedBooking.unit.size})
-                </p>
+        {/* Legend */}
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t bg-muted/30 px-4 py-2.5 text-xs text-muted-foreground">
+          <LegendSwatch className="border-violet-500 bg-violet-100" label="Scheduled" />
+          <LegendSwatch className="border-sky-500 bg-sky-100" label="On hire" />
+          <span className="flex items-center gap-2">
+            <span className="bg-hatch h-3 w-5 rounded-sm border" /> In service
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="h-3 w-px bg-[var(--brand-red)]" /> Today
+          </span>
+          <span className="ml-auto hidden sm:inline">Click a booking for details</span>
+        </div>
+      </section>
+
+      {/* Quick view */}
+      <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+        <SheetContent side="right" className="w-full gap-0 sm:max-w-md">
+          {selected && (
+            <>
+              <SheetHeader className="border-b px-5 py-4">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono-unit text-xs text-muted-foreground">{selected.id}</span>
+                  <StatusBadge status={selected.status} />
+                </div>
+                <SheetTitle className="mt-1 text-lg font-semibold">{selected.customer.name}</SheetTitle>
+                <SheetDescription>
+                  {formatDateRange(selected.startDate, selected.endDate)} · {daysBetween(selected.startDate, selected.endDate)} days
+                </SheetDescription>
+              </SheetHeader>
+              <div className="scrollbar-thin flex-1 space-y-5 overflow-y-auto px-5 py-5">
+                <div className="grid grid-cols-2 gap-3">
+                  <Fact label="Delivery" value={formatDate(selected.startDate, { year: true })} sub={selected.deliveryTime} />
+                  <Fact label="Collection" value={formatDate(selected.endDate, { year: true })} sub={selected.collectionTime} />
+                </div>
+                <dl className="divide-y rounded-md border text-sm">
+                  <Row icon={<UnitTypeIcon type={selected.unit.unitType} />} label="Unit">
+                    <span className="font-mono-unit text-[13px]">{selected.unit.id}</span>
+                    <span className="text-muted-foreground"> · {UNIT_TYPE_LABELS[selected.unit.unitType]}</span>
+                  </Row>
+                  <Row icon={<User className="size-4 text-muted-foreground" />} label="Site contact">
+                    {selected.contactName}
+                  </Row>
+                  <Row icon={<Phone className="size-4 text-muted-foreground" />} label="Phone">
+                    <a href={`tel:${selected.contactPhone}`} className="text-foreground hover:underline">
+                      {formatPhone(selected.contactPhone)}
+                    </a>
+                  </Row>
+                  <Row icon={<MapPin className="size-4 text-muted-foreground" />} label="Address">
+                    {selected.deliveryAddress}
+                  </Row>
+                  <Row icon={<Thermometer className="size-4 text-muted-foreground" />} label="Temperature">
+                    {selected.tempRequired}°C
+                  </Row>
+                  <Row icon={<Zap className="size-4 text-muted-foreground" />} label="Power">
+                    {POWER_LABELS[selected.powerAvailable]}
+                  </Row>
+                </dl>
+                {selected.notes && (
+                  <div>
+                    <div className="mb-1 text-xs font-medium text-muted-foreground">Notes</div>
+                    <p className="rounded-md bg-muted/60 p-3 text-sm text-foreground">{selected.notes}</p>
+                  </div>
+                )}
               </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-3 bg-green-50 rounded-xl border border-green-100">
-                  <span className="text-xs text-green-600 font-medium">Start Date</span>
-                  <p className="font-semibold text-green-800 mt-1">{selectedBooking.startDate}</p>
-                </div>
-                <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-                  <span className="text-xs text-red-600 font-medium">End Date</span>
-                  <p className="font-semibold text-red-800 mt-1">{selectedBooking.endDate}</p>
-                </div>
+              <div className="flex gap-2 border-t px-5 py-4">
+                <Link
+                  href={`/bookings/${selected.id}`}
+                  className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md bg-[var(--brand-red)] text-sm font-medium text-white hover:bg-[var(--brand-red-dark)]"
+                >
+                  Open booking <ArrowUpRight className="size-4" />
+                </Link>
+                <Link
+                  href={`/customers/${selected.customerId}`}
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border px-3 text-sm font-medium hover:bg-muted"
+                >
+                  <CalendarRange className="size-4" /> Customer
+                </Link>
               </div>
-              
-              <div className="space-y-3">
-                <a href={`tel:${selectedBooking.contactPhone}`} className="flex items-center gap-3 p-3 bg-[var(--warm-gray-50)] rounded-xl hover:bg-[var(--warm-gray-100)] transition-colors">
-                  <Phone className="h-4 w-4 text-[var(--brand-red)]" />
-                  <span className="text-sm font-medium">{selectedBooking.contactPhone}</span>
-                </a>
-                <div className="flex items-start gap-3 p-3 bg-[var(--warm-gray-50)] rounded-xl">
-                  <MapPin className="h-4 w-4 text-[var(--brand-red)] mt-0.5" />
-                  <span className="text-sm">{selectedBooking.deliveryAddress}</span>
-                </div>
-                <div className="flex items-center gap-3 p-3 bg-[var(--warm-gray-50)] rounded-xl">
-                  <Thermometer className="h-4 w-4 text-blue-500" />
-                  <span className="text-sm">{selectedBooking.tempRequired}°C required</span>
-                </div>
-                <div className="flex items-center gap-3 p-3 bg-[var(--warm-gray-50)] rounded-xl">
-                  <Zap className="h-4 w-4 text-amber-500" />
-                  <span className="text-sm">{selectedBooking.powerAvailable === 'STANDARD' ? '13A Standard' : '32A Industrial'}</span>
-                </div>
-              </div>
-            </div>
+            </>
           )}
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
     </>
+  );
+}
+
+function LegendSwatch({ className, label }: { className: string; label: string }) {
+  return (
+    <span className="flex items-center gap-2">
+      <span className={cn('h-3 w-5 rounded-sm border-l-[3px]', className)} /> {label}
+    </span>
+  );
+}
+
+function Fact({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-md border p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-foreground">{value}</div>
+      {sub && <div className="tabular text-xs text-muted-foreground">{sub}</div>}
+    </div>
+  );
+}
+
+function Row({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-3 px-3 py-2.5">
+      <span className="mt-0.5 shrink-0">{icon}</span>
+      <dt className="w-24 shrink-0 text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 flex-1 text-foreground">{children}</dd>
+    </div>
   );
 }

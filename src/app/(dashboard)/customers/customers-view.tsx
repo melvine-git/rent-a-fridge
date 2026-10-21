@@ -1,20 +1,27 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { motion } from 'framer-motion';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { SegmentedControl } from '@/components/app/segmented-control';
+import { EmptyState } from '@/components/app/empty-state';
+import { Avatar } from '@/components/app/avatar';
+import { Field } from '@/components/app/field';
+import { Pill } from '@/components/ui/status-badge';
 import { addCustomer } from '@/lib/actions';
-import { Plus, Phone, Mail, MapPin, Search, Building2 } from 'lucide-react';
-import type { Customer } from '@/types';
+import { formatDate, formatPhone } from '@/lib/format';
+import { cn } from '@/lib/utils';
+import { Plus, Search, Users, ChevronRight, ArrowUpDown } from 'lucide-react';
+import type { CustomerWithStats } from '@/types';
 
 interface CustomersViewProps {
-  initialCustomers: Customer[];
+  initialCustomers: CustomerWithStats[];
 }
+
+type SortKey = 'name' | 'lastBookingDate' | 'totalBookings';
 
 export function CustomersView({ initialCustomers }: CustomersViewProps) {
   const router = useRouter();
@@ -22,18 +29,13 @@ export function CustomersView({ initialCustomers }: CustomersViewProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-
-  const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-    email: '',
-    address: '',
-  });
+  const [segment, setSegment] = useState<'all' | 'active' | 'inactive'>('all');
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'name', dir: 1 });
+  const [formData, setFormData] = useState({ name: '', phone: '', email: '', address: '' });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-
     try {
       const newCustomer = await addCustomer({
         name: formData.name,
@@ -41,188 +43,238 @@ export function CustomersView({ initialCustomers }: CustomersViewProps) {
         email: formData.email || undefined,
         address: formData.address,
       });
-
-      setCustomers(prev => [...prev, newCustomer]);
-      toast.success('Customer added successfully!', {
-        description: `${newCustomer.name} has been added`,
-      });
-      
+      setCustomers((prev) => [...prev, { ...newCustomer, activeHires: 0, totalBookings: 0 }]);
+      toast.success('Customer added', { description: `${newCustomer.name} has been added` });
       setFormData({ name: '', phone: '', email: '', address: '' });
       setIsDialogOpen(false);
       router.refresh();
-    } catch (error) {
-      toast.error('Failed to add customer', {
-        description: 'Please try again',
-      });
+    } catch {
+      toast.error('Failed to add customer', { description: 'Please try again' });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const filteredCustomers = customers.filter(
-    c =>
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.phone.includes(searchQuery) ||
-      c.email?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const rows = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return customers
+      .filter((c) => (segment === 'all' ? true : segment === 'active' ? c.activeHires > 0 : c.activeHires === 0))
+      .filter(
+        (c) =>
+          !q ||
+          c.name.toLowerCase().includes(q) ||
+          c.phone.replace(/\s/g, '').includes(q.replace(/\s/g, '')) ||
+          c.email?.toLowerCase().includes(q) ||
+          c.address.toLowerCase().includes(q)
+      )
+      .sort((a, b) => {
+        const av = a[sort.key] ?? '';
+        const bv = b[sort.key] ?? '';
+        return (typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv))) * sort.dir;
+      });
+  }, [customers, searchQuery, segment, sort]);
+
+  const toggleSort = (key: SortKey) =>
+    setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: key === 'name' ? 1 : -1 }));
+
+  const activeCount = customers.filter((c) => c.activeHires > 0).length;
 
   return (
-    <div className="space-y-4 sm:space-y-6">
-      {/* Search and Actions Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--warm-gray-400)]" />
-          <Input
-            placeholder="Search customers..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 sm:pl-11 h-10 sm:h-11 rounded-xl border-[var(--warm-gray-200)] bg-white focus:ring-2 focus:ring-[var(--brand-red)]/20 focus:border-[var(--brand-red)]"
-          />
+    <>
+      <section className="surface overflow-hidden">
+        <div className="flex flex-col gap-3 border-b px-4 py-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative sm:w-80">
+              <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search name, phone, email or address"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-9 pl-9"
+              />
+            </div>
+            <SegmentedControl
+              size="sm"
+              value={segment}
+              onChange={setSegment}
+              options={[
+                { value: 'all', label: 'All', count: customers.length },
+                { value: 'active', label: 'On hire', count: activeCount },
+                { value: 'inactive', label: 'Inactive', count: customers.length - activeCount },
+              ]}
+            />
+          </div>
+          <Button onClick={() => setIsDialogOpen(true)} className="h-9 gap-1.5 px-3.5 hover:bg-[var(--brand-red-dark)]">
+            <Plus /> Add customer
+          </Button>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger
-            render={
-              <Button className="w-full sm:w-auto bg-[var(--brand-red)] hover:bg-[var(--brand-red-dark)] text-white font-semibold h-10 sm:h-11 px-5 rounded-xl shadow-sm hover:shadow-md transition-all gap-2">
-                <Plus className="h-4 w-4" />
-                Add Customer
-              </Button>
-            }
+
+        {rows.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title={searchQuery ? 'No matching customers' : 'No customers yet'}
+            description={searchQuery ? 'Try a different search term or filter.' : 'Add your first customer to start taking bookings.'}
           />
-          <DialogContent className="rounded-2xl">
-            <DialogHeader>
-              <DialogTitle className="text-xl">Add New Customer</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-5 pt-2">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-[var(--charcoal)]">Name *</label>
-                <Input
-                  value={formData.name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="Company or individual name"
-                  required
-                  className="h-11 rounded-xl"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-[var(--charcoal)]">Phone *</label>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+                  <SortTh label="Customer" active={sort.key === 'name'} onClick={() => toggleSort('name')} />
+                  <th className="px-4 py-2.5 font-medium">Contact</th>
+                  <th className="hidden px-4 py-2.5 font-medium lg:table-cell">Address</th>
+                  <th className="px-4 py-2.5 font-medium">Status</th>
+                  <SortTh label="Bookings" align="right" active={sort.key === 'totalBookings'} onClick={() => toggleSort('totalBookings')} />
+                  <SortTh label="Last hire" className="hidden md:table-cell" active={sort.key === 'lastBookingDate'} onClick={() => toggleSort('lastBookingDate')} />
+                  <th className="w-10" />
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {rows.map((c) => (
+                  <tr
+                    key={c.id}
+                    onClick={() => router.push(`/customers/${c.id}`)}
+                    className="group cursor-pointer transition-colors hover:bg-muted/40"
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <Avatar name={c.name} />
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-foreground">{c.name}</div>
+                          <div className="text-xs text-muted-foreground">Customer since {formatDate(c.createdAt, { year: true })}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <a
+                        href={`tel:${c.phone}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="tabular block whitespace-nowrap text-foreground hover:underline"
+                      >
+                        {formatPhone(c.phone)}
+                      </a>
+                      {c.email && (
+                        <a
+                          href={`mailto:${c.email}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="block max-w-[220px] truncate text-xs text-muted-foreground hover:text-foreground hover:underline"
+                        >
+                          {c.email}
+                        </a>
+                      )}
+                    </td>
+                    <td className="hidden max-w-[280px] px-4 py-3 lg:table-cell">
+                      <span className="line-clamp-2 text-muted-foreground">{c.address}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {c.activeHires > 0 ? (
+                        <Pill tone="info" showDot>
+                          {c.activeHires} on hire
+                        </Pill>
+                      ) : (
+                        <Pill tone="neutral">Inactive</Pill>
+                      )}
+                    </td>
+                    <td className="tabular px-4 py-3 text-right text-foreground">{c.totalBookings}</td>
+                    <td className="tabular hidden px-4 py-3 whitespace-nowrap text-muted-foreground md:table-cell">
+                      {formatDate(c.lastBookingDate)}
+                    </td>
+                    <td className="pr-4">
+                      <ChevronRight className="size-4 text-muted-foreground/50 transition-colors group-hover:text-foreground" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="border-t bg-muted/30 px-4 py-2.5 text-xs text-muted-foreground">
+          Showing {rows.length} of {customers.length} customers
+        </div>
+      </section>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold">Add customer</DialogTitle>
+            <DialogDescription>Create a new account. You can add delivery addresses and preferences afterwards.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Field label="Company or name" required>
+              <Input
+                value={formData.name}
+                onChange={(e) => setFormData((p) => ({ ...p, name: e.target.value }))}
+                placeholder="e.g. Hillside Catering"
+                required
+                className="h-9"
+              />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Phone" required>
                 <Input
                   value={formData.phone}
-                  onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                  placeholder="+44 28 ..."
+                  onChange={(e) => setFormData((p) => ({ ...p, phone: e.target.value }))}
+                  placeholder="+44 28 …"
                   required
-                  className="h-11 rounded-xl"
+                  className="h-9"
                 />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-[var(--charcoal)]">Email</label>
+              </Field>
+              <Field label="Email">
                 <Input
                   type="email"
                   value={formData.email}
-                  onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                  placeholder="email@example.com"
-                  className="h-11 rounded-xl"
+                  onChange={(e) => setFormData((p) => ({ ...p, email: e.target.value }))}
+                  placeholder="name@company.com"
+                  className="h-9"
                 />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-[var(--charcoal)]">Address *</label>
-                <Input
-                  value={formData.address}
-                  onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
-                  placeholder="Full address"
-                  required
-                  className="h-11 rounded-xl"
-                />
-              </div>
-              <div className="flex gap-3 pt-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsDialogOpen(false)}
-                  className="flex-1 h-11 rounded-xl"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex-1 bg-[var(--brand-red)] hover:bg-[var(--brand-red-dark)] text-white h-11 rounded-xl font-semibold"
-                >
-                  {isSubmitting ? 'Adding...' : 'Add Customer'}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* Customer Cards Grid */}
-      {filteredCustomers.length === 0 ? (
-        <Card className="rounded-xl sm:rounded-2xl border-0 shadow-[var(--shadow-sm)]">
-          <CardContent className="p-8 sm:p-12 text-center">
-            <div className="text-4xl mb-3">👥</div>
-            <div className="text-[var(--warm-gray-500)] font-medium">No customers found</div>
-            <div className="text-sm text-[var(--warm-gray-400)] mt-1">
-              {searchQuery ? 'Try a different search term' : 'Add your first customer to get started'}
+              </Field>
             </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-5">
-          {filteredCustomers.map((customer, index) => (
-            <motion.div
-              key={customer.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-            >
-              <Card className="rounded-xl sm:rounded-2xl border-0 shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] transition-all duration-200 sm:hover:-translate-y-1 cursor-pointer overflow-hidden group">
-                <CardContent className="p-4 sm:p-5">
-                  <div className="flex items-start gap-3 sm:gap-4">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-gradient-to-br from-[var(--brand-red)]/10 to-[var(--brand-red)]/5 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
-                      <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-[var(--brand-red)]" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-sm sm:text-base text-[var(--charcoal)] truncate">{customer.name}</h3>
-                      <p className="text-[10px] sm:text-xs text-[var(--warm-gray-400)] mt-0.5">Since {customer.createdAt}</p>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-3 sm:mt-4 space-y-2 sm:space-y-2.5">
-                    <a 
-                      href={`tel:${customer.phone}`}
-                      className="flex items-center gap-2.5 sm:gap-3 text-xs sm:text-sm text-[var(--charcoal)] hover:text-[var(--brand-red)] transition-colors"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-[var(--warm-gray-100)] flex items-center justify-center">
-                        <Phone className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-[var(--warm-gray-500)]" />
-                      </div>
-                      <span className="font-medium">{customer.phone}</span>
-                    </a>
-                    {customer.email && (
-                      <a 
-                        href={`mailto:${customer.email}`}
-                        className="flex items-center gap-2.5 sm:gap-3 text-xs sm:text-sm text-[var(--warm-gray-600)] hover:text-[var(--brand-red)] transition-colors"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-[var(--warm-gray-100)] flex items-center justify-center">
-                          <Mail className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-[var(--warm-gray-500)]" />
-                        </div>
-                        <span className="truncate">{customer.email}</span>
-                      </a>
-                    )}
-                    <div className="flex items-start gap-2.5 sm:gap-3 text-xs sm:text-sm text-[var(--warm-gray-600)]">
-                      <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-[var(--warm-gray-100)] flex items-center justify-center flex-shrink-0">
-                        <MapPin className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-[var(--warm-gray-500)]" />
-                      </div>
-                      <span className="line-clamp-2">{customer.address}</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
-      )}
-    </div>
+            <Field label="Invoice address" required>
+              <Input
+                value={formData.address}
+                onChange={(e) => setFormData((p) => ({ ...p, address: e.target.value }))}
+                placeholder="Street, town, postcode"
+                required
+                className="h-9"
+              />
+            </Field>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} className="h-9 px-4">
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSubmitting} className="h-9 px-4 hover:bg-[var(--brand-red-dark)]">
+                {isSubmitting ? 'Adding…' : 'Add customer'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function SortTh({
+  label,
+  active,
+  onClick,
+  align = 'left',
+  className,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  align?: 'left' | 'right';
+  className?: string;
+}) {
+  return (
+    <th className={cn('px-4 py-2.5 font-medium', align === 'right' && 'text-right', className)}>
+      <button
+        onClick={onClick}
+        className={cn('inline-flex items-center gap-1 hover:text-foreground', active && 'text-foreground')}
+      >
+        {label}
+        <ArrowUpDown className={cn('size-3', active ? 'opacity-100' : 'opacity-40')} />
+      </button>
+    </th>
   );
 }

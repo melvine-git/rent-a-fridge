@@ -1,113 +1,172 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { Calendar, Truck, Users, Box, X } from 'lucide-react';
+import {
+  LayoutDashboard,
+  CalendarDays,
+  Truck,
+  PackageCheck,
+  Users,
+  Box,
+  Wrench,
+  Phone,
+  Mail,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import type { ShellData } from '@/types';
 
-const navItems = [
-  { href: '/bookings', label: 'Bookings', icon: Calendar, description: 'Calendar & scheduling' },
-  { href: '/deliveries', label: 'Deliveries', icon: Truck, description: 'Driver jobs' },
-  { href: '/customers', label: 'Customers', icon: Users, description: 'Client records' },
-  { href: '/units', label: 'Units', icon: Box, description: 'Fleet inventory' },
-];
+type NavItem = { href: string; label: string; icon: LucideIcon; count?: number; urgent?: boolean };
+
+function buildNav(counts: ShellData['counts']): { section: string; items: NavItem[] }[] {
+  return [
+    {
+      section: 'Overview',
+      items: [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }],
+    },
+    {
+      section: 'Operations',
+      items: [
+        { href: '/bookings', label: 'Bookings', icon: CalendarDays, count: counts.actionsOverdue, urgent: true },
+        { href: '/deliveries', label: 'Deliveries', icon: Truck, count: counts.deliveriesToday },
+        { href: '/collections', label: 'Collections', icon: PackageCheck, count: counts.collectionsDue, urgent: true },
+      ],
+    },
+    {
+      section: 'Fleet',
+      items: [
+        { href: '/units', label: 'Units', icon: Box },
+        { href: '/maintenance', label: 'Maintenance', icon: Wrench, count: counts.serviceDue, urgent: true },
+      ],
+    },
+    {
+      section: 'Accounts',
+      items: [{ href: '/customers', label: 'Customers', icon: Users }],
+    },
+  ];
+}
+
+export function Logo({ className }: { className?: string }) {
+  return (
+    <Link href="/dashboard" className={cn('flex items-center select-none', className)} aria-label="Andy Keery – go to dashboard">
+      <Image src="/andy-keery-logo-light.svg" alt="Andy Keery Temperature Controlled Solutions" width={170} height={36} priority unoptimized />
+    </Link>
+  );
+}
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
+  counts: ShellData['counts'];
 }
 
-export function Sidebar({ isOpen, onClose }: SidebarProps) {
+export function Sidebar({ isOpen, onClose, counts }: SidebarProps) {
   const pathname = usePathname();
+  const nav = buildNav(counts);
 
-  const sidebarContent = (
-    <>
-      {/* Navigation */}
-      <nav className="flex-1 p-4 lg:p-5 space-y-2">
-        {navItems.map((item) => {
-          const isActive = pathname.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              className={cn(
-                'relative flex items-center gap-3 lg:gap-4 px-3 lg:px-4 py-3 lg:py-3.5 rounded-xl lg:rounded-2xl text-sm font-medium transition-all duration-200',
-                isActive
-                  ? 'bg-[var(--brand-red)] text-white shadow-lg shadow-[var(--brand-red)]/20'
-                  : 'text-[var(--warm-gray-300)] hover:bg-[var(--charcoal-light)] hover:text-white'
-              )}
-            >
-              {isActive && (
-                <motion.div
-                  layoutId="activeNav"
-                  className="absolute inset-0 bg-[var(--brand-red)] rounded-xl lg:rounded-2xl"
-                  initial={false}
-                  transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                />
-              )}
-              <span className="relative z-10 flex items-center gap-3 lg:gap-4">
-                <item.icon className={cn('h-5 w-5 flex-shrink-0', isActive ? 'text-white' : 'text-[var(--warm-gray-400)]')} />
-                <div>
-                  <div className="font-semibold">{item.label}</div>
-                  <div className={cn('text-xs', isActive ? 'text-white/70' : 'text-[var(--warm-gray-500)]')}>
-                    {item.description}
-                  </div>
-                </div>
-              </span>
-            </Link>
-          );
-        })}
+  const content = (
+    <div className="flex h-full flex-col">
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--sidebar-border)] px-5">
+        <Logo />
+        <button
+          onClick={onClose}
+          className="flex size-8 items-center justify-center rounded-md text-stone-400 hover:bg-white/10 hover:text-white lg:hidden"
+          aria-label="Close menu"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+
+      <nav className="scrollbar-thin flex-1 space-y-6 overflow-y-auto px-3 py-5" aria-label="Main">
+        {nav.map((group) => (
+          <div key={group.section}>
+            <div className="mb-1.5 px-2.5 text-[11px] font-medium uppercase tracking-wider text-stone-500">
+              {group.section}
+            </div>
+            <ul className="space-y-0.5">
+              {group.items.map((item) => {
+                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      onClick={onClose}
+                      aria-current={active ? 'page' : undefined}
+                      className={cn(
+                        'relative flex h-9 items-center gap-3 rounded-md px-2.5 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-red)]/60',
+                        active ? 'bg-white/[0.08] text-white' : 'text-stone-400 hover:bg-white/[0.05] hover:text-stone-100'
+                      )}
+                    >
+                      {active && <span className="absolute inset-y-2 left-0 w-[3px] rounded-r bg-[var(--brand-red)]" />}
+                      <item.icon className={cn('size-4 shrink-0', active ? 'text-white' : 'text-stone-500')} />
+                      <span className="flex-1 truncate">{item.label}</span>
+                      {!!item.count && (
+                        <span
+                          className={cn(
+                            'tabular min-w-5 rounded px-1.5 py-px text-center text-[11px] font-semibold',
+                            item.urgent ? 'bg-[var(--brand-red)] text-white' : 'bg-white/10 text-stone-300'
+                          )}
+                        >
+                          {item.count}
+                        </span>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
       </nav>
 
-      {/* Bottom section */}
-      <div className="p-4 lg:p-5 border-t border-[var(--charcoal-light)]">
-        <div className="text-xs text-[var(--warm-gray-500)] text-center">
-          Operations Dashboard
+      <div className="shrink-0 border-t border-[var(--sidebar-border)] p-3">
+        <div className="rounded-md bg-white/[0.04] p-3">
+          <div className="text-xs font-medium text-stone-200">Andy Keery Refrigeration</div>
+          <div className="mt-2 space-y-1.5">
+            <a href="tel:+442892622633" className="flex items-center gap-2 text-xs text-stone-400 hover:text-white">
+              <Phone className="size-3.5" /> +44 28 9262 2633
+            </a>
+            <a href="mailto:info@rent-a-fridge.co.uk" className="flex items-center gap-2 text-xs text-stone-400 hover:text-white">
+              <Mail className="size-3.5" /> info@rent-a-fridge.co.uk
+            </a>
+          </div>
         </div>
+        <p className="mt-3 px-1 text-[11px] text-stone-600">
+          © {new Date().getFullYear()} Andy Keery · Built by{' '}
+          <a href="https://mirality.co.uk" target="_blank" rel="noopener noreferrer" className="hover:text-stone-400">
+            Mirality
+          </a>
+        </p>
       </div>
-    </>
+    </div>
   );
 
   return (
     <>
-      {/* Desktop sidebar - always visible */}
-      <aside className="hidden lg:flex w-64 bg-[var(--charcoal)] min-h-[calc(100vh-5rem)] flex-col">
-        {sidebarContent}
-      </aside>
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 bg-[var(--sidebar)] lg:block">{content}</aside>
 
-      {/* Mobile sidebar - drawer */}
       <AnimatePresence>
         {isOpen && (
           <>
-            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={onClose}
-              className="lg:hidden fixed inset-0 bg-black/50 z-40"
+              className="fixed inset-0 z-40 bg-black/40 lg:hidden"
             />
-            {/* Drawer */}
             <motion.aside
               initial={{ x: '-100%' }}
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="lg:hidden fixed inset-y-0 left-0 w-72 bg-[var(--charcoal)] z-50 flex flex-col shadow-2xl"
+              transition={{ type: 'spring', damping: 30, stiffness: 320 }}
+              className="fixed inset-y-0 left-0 z-50 w-64 bg-[var(--sidebar)] shadow-2xl lg:hidden"
             >
-              {/* Close button */}
-              <div className="flex items-center justify-between p-4 border-b border-[var(--charcoal-light)]">
-                <span className="text-white font-semibold">Menu</span>
-                <button 
-                  onClick={onClose}
-                  className="w-9 h-9 rounded-xl bg-[var(--charcoal-light)] flex items-center justify-center hover:bg-[var(--warm-gray-600)] transition-colors"
-                >
-                  <X className="h-5 w-5 text-white" />
-                </button>
-              </div>
-              {sidebarContent}
+              {content}
             </motion.aside>
           </>
         )}

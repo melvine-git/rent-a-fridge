@@ -1,175 +1,305 @@
 'use client';
 
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Card, CardContent } from '@/components/ui/card';
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { Snowflake, Zap, Wrench } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { SegmentedControl } from '@/components/app/segmented-control';
+import { EmptyState } from '@/components/app/empty-state';
+import { Field, selectClass, textareaClass } from '@/components/app/field';
+import { UnitTypeIcon, UNIT_TYPE_ICON } from '@/components/app/unit-type-icon';
+import { Plus, Search, LayoutGrid, List, PackageSearch, ChevronRight, Zap, Ruler } from 'lucide-react';
+import { toast } from 'sonner';
+import { addUnit } from '@/lib/actions';
 import { cn } from '@/lib/utils';
-import type { Unit, UnitStatus } from '@/types';
+import { POWER_LABELS, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS } from '@/lib/domain';
+import { daysFromToday, formatDate } from '@/lib/format';
+import type { UnitStatus, UnitType, UnitSize, PowerType, UnitWithHire } from '@/types';
 
 interface UnitsViewProps {
-  units: Unit[];
+  units: UnitWithHire[];
 }
 
-const sizeConfig = {
-  SMALL: { label: 'Small', color: 'bg-blue-100 text-blue-700' },
-  MEDIUM: { label: 'Medium', color: 'bg-purple-100 text-purple-700' },
-  LARGE: { label: 'Large', color: 'bg-amber-100 text-amber-700' },
-} as const;
-
-const powerConfig = {
-  STANDARD: { label: '13A Standard', icon: Zap, color: 'text-green-600' },
-  INDUSTRIAL: { label: '32A Industrial', icon: Zap, color: 'text-orange-600' },
-} as const;
-
-const filterConfig = [
-  { value: 'all', label: 'All Units', color: 'bg-[var(--charcoal)]' },
-  { value: 'AVAILABLE', label: 'Available', color: 'bg-green-500' },
-  { value: 'ON_HIRE', label: 'On Hire', color: 'bg-blue-500' },
-  { value: 'MAINTENANCE', label: 'Maintenance', color: 'bg-gray-400' },
-] as const;
-
 export function UnitsView({ units }: UnitsViewProps) {
-  const [filter, setFilter] = useState<'all' | UnitStatus>('all');
+  const router = useRouter();
+  const [statusFilter, setStatusFilter] = useState<'all' | UnitStatus>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | UnitType>('all');
+  const [query, setQuery] = useState('');
+  const [layout, setLayout] = useState<'table' | 'grid'>('table');
+  const [showAddUnit, setShowAddUnit] = useState(false);
+  const [newUnit, setNewUnit] = useState({
+    id: '',
+    size: 'MEDIUM' as UnitSize,
+    powerType: 'STANDARD' as PowerType,
+    unitType: 'COLD_STORE' as UnitType,
+    notes: '',
+  });
 
-  const filteredUnits = filter === 'all' 
-    ? units 
-    : units.filter(u => u.status === filter);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return units.filter(
+      (u) =>
+        (statusFilter === 'all' || u.status === statusFilter) &&
+        (typeFilter === 'all' || u.unitType === typeFilter) &&
+        (!q || u.id.toLowerCase().includes(q) || u.currentHire?.customerName.toLowerCase().includes(q) || u.notes?.toLowerCase().includes(q))
+    );
+  }, [units, statusFilter, typeFilter, query]);
 
   const counts = {
     all: units.length,
-    AVAILABLE: units.filter(u => u.status === 'AVAILABLE').length,
-    ON_HIRE: units.filter(u => u.status === 'ON_HIRE').length,
-    MAINTENANCE: units.filter(u => u.status === 'MAINTENANCE').length,
+    AVAILABLE: units.filter((u) => u.status === 'AVAILABLE').length,
+    ON_HIRE: units.filter((u) => u.status === 'ON_HIRE').length,
+    MAINTENANCE: units.filter((u) => u.status === 'MAINTENANCE').length,
+  };
+
+  const handleAddUnit = async () => {
+    if (!newUnit.id) {
+      toast.error('Please enter a unit ID');
+      return;
+    }
+    const result = await addUnit(newUnit);
+    if (result.success) {
+      toast.success(`Unit ${newUnit.id} added to fleet`);
+      setShowAddUnit(false);
+      setNewUnit({ id: '', size: 'MEDIUM', powerType: 'STANDARD', unitType: 'COLD_STORE', notes: '' });
+      router.refresh();
+    } else {
+      toast.error(result.error || 'Failed to add unit');
+    }
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6">
-      {/* Filter Pills */}
-      <div className="flex gap-2 flex-wrap overflow-x-auto pb-1 -mx-1 px-1">
-        {filterConfig.map((item) => {
-          const count = counts[item.value as keyof typeof counts];
-          const isActive = filter === item.value;
-          return (
-            <button
-              key={item.value}
-              onClick={() => setFilter(item.value as typeof filter)}
-              className={cn(
-                'relative flex items-center gap-1.5 sm:gap-2.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap flex-shrink-0',
-                isActive
-                  ? 'bg-[var(--charcoal)] text-white shadow-lg'
-                  : 'bg-white text-[var(--charcoal)] hover:bg-[var(--warm-gray-100)] border border-[var(--warm-gray-200)]'
-              )}
+    <div className="space-y-4">
+      <section className="surface overflow-hidden">
+        {/* Toolbar */}
+        <div className="flex flex-col gap-3 border-b px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="relative lg:w-64">
+              <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input placeholder="Search unit or customer" value={query} onChange={(e) => setQuery(e.target.value)} className="h-9 pl-9" />
+            </div>
+            <SegmentedControl
+              size="sm"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              ariaLabel="Status"
+              options={[
+                { value: 'all', label: 'All', count: counts.all },
+                { value: 'AVAILABLE', label: 'Available', count: counts.AVAILABLE },
+                { value: 'ON_HIRE', label: 'On hire', count: counts.ON_HIRE },
+                { value: 'MAINTENANCE', label: 'Maintenance', count: counts.MAINTENANCE },
+              ]}
+            />
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}
+              className={cn(selectClass, 'h-8 w-auto text-[13px]')}
+              aria-label="Unit type"
             >
-              <span className={cn('w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full', item.color)} />
-              <span className="hidden xs:inline">{item.label}</span>
-              <span className="xs:hidden">{item.value === 'all' ? 'All' : item.label.split(' ')[0]}</span>
-              <span className={cn(
-                'ml-0.5 sm:ml-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold',
-                isActive ? 'bg-white/20 text-white' : 'bg-[var(--warm-gray-100)] text-[var(--warm-gray-600)]'
-              )}>
-                {count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Units Grid */}
-      {filteredUnits.length === 0 ? (
-        <Card className="rounded-xl sm:rounded-2xl border-0 shadow-[var(--shadow-sm)]">
-          <CardContent className="p-8 sm:p-12 text-center">
-            <div className="text-4xl mb-3">📦</div>
-            <div className="text-[var(--warm-gray-500)] font-medium">No units found</div>
-            <div className="text-sm text-[var(--warm-gray-400)] mt-1">Try a different filter</div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-5">
-          {filteredUnits.map((unit, index) => {
-            const PowerIcon = powerConfig[unit.powerType].icon;
-            return (
-              <motion.div
-                key={unit.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.03 }}
-              >
-                <Card className={cn(
-                  'rounded-xl sm:rounded-2xl border-0 shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] transition-all duration-200 sm:hover:-translate-y-1 overflow-hidden group',
-                  unit.status === 'MAINTENANCE' && 'opacity-75'
-                )}>
-                  <CardContent className="p-0">
-                    {/* Header with unit ID */}
-                    <div className={cn(
-                      'px-4 sm:px-5 py-3 sm:py-4 flex items-center justify-between',
-                      unit.status === 'AVAILABLE' && 'bg-gradient-to-r from-green-50 to-white',
-                      unit.status === 'ON_HIRE' && 'bg-gradient-to-r from-blue-50 to-white',
-                      unit.status === 'MAINTENANCE' && 'bg-gradient-to-r from-gray-100 to-white'
-                    )}>
-                      <div className="flex items-center gap-2.5 sm:gap-3">
-                        <div className={cn(
-                          'w-9 h-9 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex items-center justify-center',
-                          unit.status === 'AVAILABLE' && 'bg-green-100',
-                          unit.status === 'ON_HIRE' && 'bg-blue-100',
-                          unit.status === 'MAINTENANCE' && 'bg-gray-200'
-                        )}>
-                          {unit.status === 'MAINTENANCE' ? (
-                            <Wrench className="h-4 w-4 sm:h-5 sm:w-5 text-gray-500" />
-                          ) : (
-                            <Snowflake className={cn(
-                              'h-4 w-4 sm:h-5 sm:w-5',
-                              unit.status === 'AVAILABLE' && 'text-green-600',
-                              unit.status === 'ON_HIRE' && 'text-blue-600'
-                            )} />
-                          )}
-                        </div>
-                        <div>
-                          <h3 className="font-mono-unit text-base sm:text-lg text-[var(--charcoal)]">{unit.id}</h3>
-                        </div>
-                      </div>
-                      <StatusBadge status={unit.status} />
-                    </div>
-
-                    {/* Body */}
-                    <div className="px-4 sm:px-5 pb-4 sm:pb-5 pt-2 space-y-2.5 sm:space-y-3">
-                      {/* Size & Power */}
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className={cn(
-                          'px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-semibold',
-                          sizeConfig[unit.size].color
-                        )}>
-                          {sizeConfig[unit.size].label}
-                        </span>
-                        <span className="flex items-center gap-1 text-[10px] sm:text-xs text-[var(--warm-gray-600)]">
-                          <PowerIcon className={cn('h-3 w-3 sm:h-3.5 sm:w-3.5', powerConfig[unit.powerType].color)} />
-                          {powerConfig[unit.powerType].label}
-                        </span>
-                      </div>
-
-                      {/* Notes */}
-                      {unit.notes && (
-                        <p className="text-xs sm:text-sm text-[var(--warm-gray-500)] italic bg-[var(--warm-gray-50)] p-2 sm:p-2.5 rounded-lg">
-                          {unit.notes}
-                        </p>
-                      )}
-
-                      {/* Current Booking */}
-                      {unit.currentBookingId && (
-                        <div className="text-[10px] sm:text-xs text-[var(--warm-gray-500)] flex items-center gap-1.5 bg-blue-50 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                          Booking: <span className="font-mono-unit">{unit.currentBookingId}</span>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            );
-          })}
+              <option value="all">All types</option>
+              {(Object.keys(UNIT_TYPE_LABELS) as UnitType[]).map((t) => (
+                <option key={t} value={t}>
+                  {UNIT_TYPE_LABELS[t]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <SegmentedControl
+              size="sm"
+              value={layout}
+              onChange={setLayout}
+              ariaLabel="Layout"
+              options={[
+                { value: 'table', label: <span className="sr-only">Table</span>, icon: <List className="size-3.5" /> },
+                { value: 'grid', label: <span className="sr-only">Grid</span>, icon: <LayoutGrid className="size-3.5" /> },
+              ]}
+            />
+            <Button onClick={() => setShowAddUnit(true)} className="h-9 gap-1.5 px-3.5 hover:bg-[var(--brand-red-dark)]">
+              <Plus /> Add unit
+            </Button>
+          </div>
         </div>
-      )}
+
+        {filtered.length === 0 ? (
+          <EmptyState icon={PackageSearch} title="No units found" description="Try a different search or filter." />
+        ) : layout === 'table' ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+                  <th className="px-4 py-2.5 font-medium">Unit</th>
+                  <th className="px-4 py-2.5 font-medium">Status</th>
+                  <th className="hidden px-4 py-2.5 font-medium md:table-cell">Specification</th>
+                  <th className="px-4 py-2.5 font-medium">Current / next hire</th>
+                  <th className="hidden px-4 py-2.5 font-medium xl:table-cell">Notes</th>
+                  <th className="w-10" />
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filtered.map((u) => (
+                  <tr key={u.id} onClick={() => router.push(`/units/${u.id}`)} className="group cursor-pointer hover:bg-muted/40">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <UnitTypeIcon type={u.unitType} boxed />
+                        <div>
+                          <div className="font-mono-unit text-[13px] text-foreground">{u.id}</div>
+                          <div className="text-xs text-muted-foreground">{UNIT_TYPE_LABELS[u.unitType]}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={u.status} />
+                    </td>
+                    <td className="hidden px-4 py-3 whitespace-nowrap text-muted-foreground md:table-cell">
+                      {UNIT_SIZE_LABELS[u.size]} <span className="text-muted-foreground/40">·</span> {POWER_LABELS[u.powerType]}
+                    </td>
+                    <td className="px-4 py-3">
+                      <HireSummary unit={u} />
+                    </td>
+                    <td className="hidden max-w-[240px] truncate px-4 py-3 text-muted-foreground xl:table-cell">{u.notes || '—'}</td>
+                    <td className="pr-4">
+                      <ChevronRight className="size-4 text-muted-foreground/50 group-hover:text-foreground" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="grid gap-3 bg-muted/20 p-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+            {filtered.map((u) => {
+              const Icon = UNIT_TYPE_ICON[u.unitType];
+              return (
+                <Link
+                  key={u.id}
+                  href={`/units/${u.id}`}
+                  className="group flex flex-col rounded-lg border bg-white shadow-[var(--shadow-xs)] transition-shadow hover:shadow-[var(--shadow-md)]"
+                >
+                  <div className="flex items-start justify-between gap-3 p-4">
+                    <div className="flex items-center gap-3">
+                      <span className="flex size-10 items-center justify-center rounded-md border bg-muted/50">
+                        <Icon className="size-5 text-foreground/70" />
+                      </span>
+                      <div>
+                        <div className="font-mono-unit text-base text-foreground">{u.id}</div>
+                        <div className="text-xs text-muted-foreground">{UNIT_TYPE_LABELS[u.unitType]}</div>
+                      </div>
+                    </div>
+                    <StatusBadge status={u.status} />
+                  </div>
+                  <div className="grid grid-cols-2 divide-x border-y text-xs">
+                    <div className="flex items-center gap-1.5 px-4 py-2 text-muted-foreground">
+                      <Ruler className="size-3.5" /> {UNIT_SIZE_LABELS[u.size]}
+                    </div>
+                    <div className="flex items-center gap-1.5 px-4 py-2 text-muted-foreground">
+                      <Zap className="size-3.5" /> {POWER_LABELS[u.powerType]}
+                    </div>
+                  </div>
+                  <div className="flex-1 p-4">
+                    <HireSummary unit={u} />
+                    {u.notes && <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{u.notes}</p>}
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+        <div className="border-t bg-muted/30 px-4 py-2.5 text-xs text-muted-foreground">
+          Showing {filtered.length} of {units.length} units
+        </div>
+      </section>
+
+      <Dialog open={showAddUnit} onOpenChange={setShowAddUnit}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold">Add unit to fleet</DialogTitle>
+            <DialogDescription>New units are created as available. Add specifications from the unit page.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Field label="Unit ID" required hint="Use the fleet prefix, e.g. CS-06 or UF-03">
+              <Input
+                value={newUnit.id}
+                onChange={(e) => setNewUnit((p) => ({ ...p, id: e.target.value.toUpperCase() }))}
+                placeholder="CS-06"
+                className="h-9 font-mono"
+              />
+            </Field>
+            <Field label="Unit type">
+              <select value={newUnit.unitType} onChange={(e) => setNewUnit((p) => ({ ...p, unitType: e.target.value as UnitType }))} className={selectClass}>
+                {(Object.keys(UNIT_TYPE_LABELS) as UnitType[]).map((t) => (
+                  <option key={t} value={t}>
+                    {UNIT_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Size">
+                <select value={newUnit.size} onChange={(e) => setNewUnit((p) => ({ ...p, size: e.target.value as UnitSize }))} className={selectClass}>
+                  {(Object.keys(UNIT_SIZE_LABELS) as UnitSize[]).map((s) => (
+                    <option key={s} value={s}>
+                      {UNIT_SIZE_LABELS[s]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Power">
+                <select value={newUnit.powerType} onChange={(e) => setNewUnit((p) => ({ ...p, powerType: e.target.value as PowerType }))} className={selectClass}>
+                  {(Object.keys(POWER_LABELS) as PowerType[]).map((p) => (
+                    <option key={p} value={p}>
+                      {POWER_LABELS[p]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <Field label="Notes">
+              <textarea
+                value={newUnit.notes}
+                onChange={(e) => setNewUnit((p) => ({ ...p, notes: e.target.value }))}
+                placeholder="Optional"
+                className={textareaClass}
+              />
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddUnit(false)} className="h-9 px-4">
+              Cancel
+            </Button>
+            <Button onClick={handleAddUnit} className="h-9 px-4 hover:bg-[var(--brand-red-dark)]">
+              Add unit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
+}
+
+function HireSummary({ unit }: { unit: UnitWithHire }) {
+  if (unit.currentHire) {
+    const d = daysFromToday(unit.currentHire.endDate);
+    return (
+      <div className="min-w-0">
+        <div className="truncate text-sm font-medium text-foreground">{unit.currentHire.customerName}</div>
+        <div className={cn('text-xs', d < 0 ? 'font-medium text-red-600' : 'text-muted-foreground')}>
+          {d < 0 ? `Collection overdue by ${-d}d` : d === 0 ? 'Collection due today' : `Returns ${formatDate(unit.currentHire.endDate)}`}
+        </div>
+      </div>
+    );
+  }
+  if (unit.status === 'MAINTENANCE') return <span className="text-xs text-muted-foreground">Unavailable while in service</span>;
+  if (unit.nextBooking) {
+    return (
+      <div className="min-w-0">
+        <div className="text-sm text-foreground">Free until {formatDate(unit.nextBooking.startDate)}</div>
+        <div className="truncate text-xs text-muted-foreground">Next: {unit.nextBooking.customerName}</div>
+      </div>
+    );
+  }
+  return <span className="text-sm text-emerald-700">Ready to hire</span>;
 }

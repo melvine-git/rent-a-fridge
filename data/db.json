@@ -32,6 +32,32 @@
       "phone": "+442890123456",
       "email": "info@hillsidecatering.com",
       "address": "45 Hillside Road, Belfast BT9 5EG",
+      "addresses": [
+        {
+          "id": "addr-01",
+          "label": "Main Office",
+          "address": "45 Hillside Road, Belfast BT9 5EG",
+          "isDefault": true
+        },
+        {
+          "id": "addr-02",
+          "label": "Warehouse",
+          "address": "Unit 5, Industrial Estate, Belfast BT12 7GH"
+        },
+        {
+          "id": "addr-03",
+          "label": "Event Venue",
+          "address": "City Hall, Belfast BT1 5GS"
+        }
+      ],
+      "preferences": {
+        "preferredUnitId": "CS-04",
+        "preferredUnitType": "COLD_STORE",
+        "preferredCableLength": "10m",
+        "defaultTempRequired": 4,
+        "notes": "Prefers morning deliveries"
+      },
+      "xeroContactId": "xero-hc-001",
       "createdAt": "2024-01-15"
     },
     {
@@ -40,6 +66,24 @@
       "phone": "+442890234567",
       "email": "bookings@belfastevents.co.uk",
       "address": "12 Queen Street, Belfast BT1 6ED",
+      "addresses": [
+        {
+          "id": "addr-04",
+          "label": "Head Office",
+          "address": "12 Queen Street, Belfast BT1 6ED",
+          "isDefault": true
+        },
+        {
+          "id": "addr-05",
+          "label": "Waterfront Hall",
+          "address": "2 Lanyon Place, Belfast BT1 3WH"
+        }
+      ],
+      "preferences": {
+        "preferredUnitType": "UPRIGHT_FRIDGE",
+        "defaultTempRequired": 2
+      },
+      "xeroContactId": "xero-be-002",
       "createdAt": "2024-02-20"
     },
     {
@@ -80,74 +124,165 @@
       "id": "CS-01",
       "size": "SMALL",
       "powerType": "STANDARD",
-      "status": "AVAILABLE"
+      "unitType": "COLD_STORE",
+      "status": "AVAILABLE",
+      "specifications": {
+        "externalDimensions": {
+          "length": 2400,
+          "width": 1500,
+          "height": 2100
+        },
+        "internalDimensions": {
+          "length": 2200,
+          "width": 1300,
+          "height": 1900
+        },
+        "cubicCapacity": 5.4,
+        "doorAccess": "Rear double doors",
+        "chassisNumber": "CS01-2024-001"
+      },
+      "bom": [
+        {
+          "id": "bom-001",
+          "type": "COMPRESSOR",
+          "name": "Bitzer 4FES-3",
+          "manufacturer": "Bitzer",
+          "model": "4FES-3Y",
+          "serialNumber": "BZ240001",
+          "installedDate": "2024-01-15"
+        },
+        {
+          "id": "bom-002",
+          "type": "EVAPORATOR",
+          "name": "Kelvion Air Cooler",
+          "manufacturer": "Kelvion",
+          "model": "KAC-200",
+          "serialNumber": "KV240001"
+        },
+        {
+          "id": "bom-003",
+          "type": "CONTROLLER",
+          "name": "Dixell XR60CX",
+          "manufacturer": "Dixell",
+          "model": "XR60CX",
+          "serialNumber": "DX240001"
+        },
+        {
+          "id": "bom-004",
+          "type": "FAN_MOTOR",
+          "name": "EBM Papst",
+          "manufacturer": "EBM",
+          "model": "A4E300",
+          "serialNumber": "EB240001"
+        }
+      ],
+      "maintenanceHistory": [
+        {
+          "id": "maint-001",
+          "date": "2026-06-15",
+          "type": "SCHEDULED",
+          "description": "Annual service and inspection",
+          "performedBy": "TechCool Services",
+          "cost": 350,
+          "nextServiceDate": "2027-06-15"
+        }
+      ],
+      "dataLoggerId": "DL-CS01-001",
+      "createdAt": "2024-01-15"
     },
     {
       "id": "CS-02",
       "size": "SMALL",
       "powerType": "STANDARD",
-      "status": "AVAILABLE"
+      "unitType": "COLD_STORE",
+      "status": "AVAILABLE",
+      "specifications": {
+        "externalDimensions": {
+          "length": 2400,
+          "width": 1500,
+          "height": 2100
+        },
+        "internalDimensions": {
+          "length": 2200,
+          "width": 1300,
+          "height": 1900
+        },
+        "cubicCapacity": 5.4,
+        "doorAccess": "Rear double doors",
+        "chassisNumber": "CS02-2024-002"
+      },
+      "createdAt": "2024-02-10"
     },
     {
       "id": "CS-03",
       "size": "SMALL",
       "powerType": "INDUSTRIAL",
+      "unitType": "CHEST_FREEZER",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "UF-01",
+      "size": "MEDIUM",
+      "powerType": "STANDARD",
+      "unitType": "UPRIGHT_FRIDGE",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "UF-02",
+      "size": "MEDIUM",
+      "powerType": "STANDARD",
+      "unitType": "UPRIGHT_FRIDGE",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "CF-01",
+      "size": "MEDIUM",
+      "powerType": "INDUSTRIAL",
+      "unitType": "CHEST_FREEZER",
       "status": "AVAILABLE"
     },
     {
       "id": "CS-04",
-      "size": "MEDIUM",
-      "powerType": "STANDARD",
-      "status": "AVAILABLE"
-    },
-    {
-      "id": "CS-05",
-      "size": "MEDIUM",
-      "powerType": "STANDARD",
-      "status": "AVAILABLE"
-    },
-    {
-      "id": "CS-06",
-      "size": "MEDIUM",
-      "powerType": "INDUSTRIAL",
-      "status": "AVAILABLE"
-    },
-    {
-      "id": "CS-07",
       "size": "LARGE",
       "powerType": "STANDARD",
+      "unitType": "COLD_STORE",
       "status": "ON_HIRE",
       "currentBookingId": "book-001"
     },
     {
-      "id": "CS-08",
+      "id": "CS-05",
       "size": "LARGE",
       "powerType": "STANDARD",
+      "unitType": "COLD_STORE",
       "status": "AVAILABLE"
     },
     {
-      "id": "CS-09",
+      "id": "CF-02",
       "size": "LARGE",
       "powerType": "INDUSTRIAL",
+      "unitType": "CHEST_FREEZER",
       "status": "MAINTENANCE",
       "notes": "Compressor repair scheduled"
     },
     {
-      "id": "CS-10",
+      "id": "UF-03",
       "size": "SMALL",
       "powerType": "STANDARD",
+      "unitType": "UPRIGHT_FRIDGE",
       "status": "AVAILABLE"
     },
     {
-      "id": "CS-11",
+      "id": "CF-03",
       "size": "MEDIUM",
       "powerType": "INDUSTRIAL",
+      "unitType": "CHEST_FREEZER",
       "status": "AVAILABLE"
     },
     {
-      "id": "CS-12",
+      "id": "CS-06",
       "size": "LARGE",
       "powerType": "STANDARD",
+      "unitType": "COLD_STORE",
       "status": "AVAILABLE"
     }
   ],
@@ -155,31 +290,48 @@
     {
       "id": "book-001",
       "customerId": "cust-01",
-      "unitId": "CS-07",
+      "unitId": "CS-04",
       "status": "ON_HIRE",
       "startDate": "2026-09-28",
-      "endDate": "2026-10-15",
+      "endDate": "2026-10-25",
+      "deliveryTime": "09:00",
+      "collectionTime": "17:00",
       "contactName": "James Hillside",
       "contactPhone": "+442890123456",
       "deliveryAddress": "45 Hillside Road, Belfast BT9 5EG",
       "accessInstructions": "Side entrance, ring bell twice",
       "tempRequired": 4,
       "powerAvailable": "STANDARD",
+      "cableLength": "10m",
+      "accessories": {
+        "hitchLock": true,
+        "wheelClamp": false,
+        "doorLock": true,
+        "tempRecorder": true
+      },
+      "application": "Fresh produce storage",
+      "notes": "Customer prefers morning delivery",
+      "actionDate": "2026-10-18",
+      "actionDescription": "Confirm collection date with customer",
       "createdAt": "2026-09-25",
       "deliveryDocketId": "dock-001"
     },
     {
       "id": "book-002",
       "customerId": "cust-02",
-      "unitId": "CS-04",
+      "unitId": "UF-01",
       "status": "CONFIRMED",
-      "startDate": "2026-10-10",
-      "endDate": "2026-10-12",
+      "startDate": "2026-10-20",
+      "endDate": "2026-10-22",
+      "deliveryTime": "10:00",
+      "collectionTime": "16:00",
       "contactName": "Mary Belfast",
       "contactPhone": "+442890234567",
       "deliveryAddress": "12 Queen Street, Belfast BT1 6ED",
       "tempRequired": 2,
       "powerAvailable": "STANDARD",
+      "actionDate": "2026-10-18",
+      "actionDescription": "Send delivery confirmation to customer",
       "createdAt": "2026-10-01"
     },
     {
@@ -217,56 +369,113 @@
     {
       "id": "dock-001",
       "bookingId": "book-001",
-      "unitId": "CS-07",
+      "unitId": "CS-04",
       "type": "DELIVERY",
-      "date": "2026-09-28",
+      "scheduledDate": "2026-09-28",
+      "scheduledTime": "09:00",
       "staffId": "staff-01",
       "checklist": {
         "unitClean": true,
         "doorsSealed": true,
         "tempVerified": true,
-        "powerConnected": true
+        "powerConnected": true,
+        "tempSetting": 4,
+        "powerSupplyChecked": true,
+        "powerCableConnected": true,
+        "cableLengthUsed": "10m",
+        "hitchLockSecured": true,
+        "wheelClampSecured": false,
+        "doorLockSecured": true
       },
       "tempSet": 4,
       "signedBy": "James Hillside",
+      "signatureData": "",
       "photoUrls": [],
-      "completedAt": "2026-09-28T09:30:00Z"
+      "what3wordsAddress": "///filled.count.soap",
+      "completedAt": "2026-09-28T09:30:00Z",
+      "status": "COMPLETED"
+    },
+    {
+      "id": "dock-upcoming-001",
+      "bookingId": "book-002",
+      "unitId": "UF-01",
+      "type": "DELIVERY",
+      "scheduledDate": "2026-10-20",
+      "scheduledTime": "10:00",
+      "staffId": "staff-01",
+      "checklist": {
+        "unitClean": true,
+        "doorsSealed": true,
+        "tempVerified": true,
+        "powerConnected": true,
+        "tempSetting": 2,
+        "powerSupplyChecked": true,
+        "powerCableConnected": true,
+        "hitchLockSecured": false,
+        "wheelClampSecured": true,
+        "doorLockSecured": false,
+        "cableLengthUsed": "20m"
+      },
+      "tempSet": 2,
+      "signedBy": "",
+      "photoUrls": [],
+      "status": "SCHEDULED"
     },
     {
       "id": "dock-mv4wasxs",
       "bookingId": "book-mv4w9va2",
       "unitId": "CS-01",
       "type": "DELIVERY",
-      "date": "2026-10-12",
+      "scheduledDate": "2026-10-12",
+      "scheduledTime": "08:00",
       "staffId": "staff-01",
       "checklist": {
         "unitClean": true,
         "doorsSealed": true,
         "tempVerified": true,
-        "powerConnected": true
+        "powerConnected": true,
+        "tempSetting": 4,
+        "powerSupplyChecked": true,
+        "powerCableConnected": true,
+        "cableLengthUsed": "15m",
+        "hitchLockSecured": true,
+        "wheelClampSecured": true,
+        "doorLockSecured": true
       },
       "tempSet": 4,
-      "signedBy": "Titanic",
+      "signedBy": "Titanic Exhibitions",
+      "signatureData": "",
       "photoUrls": [],
-      "completedAt": "2026-10-12T06:52:59.008Z"
+      "what3wordsAddress": "///index.home.raft",
+      "completedAt": "2026-10-12T06:52:59.008Z",
+      "status": "COMPLETED"
     },
     {
       "id": "dock-mv4wbenc",
       "bookingId": "book-mv4w9va2",
       "unitId": "CS-01",
       "type": "COLLECTION",
-      "date": "2026-10-12",
-      "staffId": "staff-01",
+      "scheduledDate": "2026-10-20",
+      "scheduledTime": "16:00",
+      "staffId": "staff-02",
       "checklist": {
         "unitClean": true,
         "doorsSealed": true,
         "tempVerified": true,
-        "powerConnected": true
+        "powerConnected": false,
+        "tempSetting": 0,
+        "powerSupplyChecked": true,
+        "powerCableConnected": false,
+        "hitchLockSecured": false,
+        "wheelClampSecured": false,
+        "doorLockSecured": false
       },
       "tempSet": 0,
-      "signedBy": "Titanic",
+      "signedBy": "Titanic Exhibitions",
+      "signatureData": "",
       "photoUrls": [],
-      "completedAt": "2026-10-12T06:53:27.144Z"
+      "completedAt": "2026-10-12T06:53:27.144Z",
+      "status": "COMPLETED"
     }
   ]
 }

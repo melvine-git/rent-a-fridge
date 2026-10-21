@@ -1,72 +1,97 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { Phone, Mail, Menu } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { Fragment } from 'react';
+import { Bell, ChevronRight, Menu, Plus, Search } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+const SEGMENT_LABELS: Record<string, string> = {
+  dashboard: 'Dashboard',
+  bookings: 'Bookings',
+  deliveries: 'Deliveries',
+  collections: 'Collections',
+  customers: 'Customers',
+  units: 'Units',
+  maintenance: 'Maintenance',
+  new: 'New booking',
+};
 
 interface TopBarProps {
   onMenuClick: () => void;
+  onSearchClick: () => void;
+  onNotificationsClick: () => void;
+  notificationCount: number;
 }
 
-export function TopBar({ onMenuClick }: TopBarProps) {
+export function TopBar({ onMenuClick, onSearchClick, onNotificationsClick, notificationCount }: TopBarProps) {
+  const pathname = usePathname();
+  const segments = pathname.split('/').filter(Boolean);
+
   return (
-    <header className="h-16 sm:h-20 bg-white border-b border-[var(--warm-gray-200)] flex items-center justify-between px-4 sm:px-6 lg:px-8 shadow-[var(--shadow-xs)]">
-      {/* Mobile menu button */}
-      <button 
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-white/90 px-4 backdrop-blur supports-backdrop-filter:bg-white/75 sm:px-6">
+      <button
         onClick={onMenuClick}
-        className="lg:hidden w-10 h-10 rounded-xl bg-[var(--warm-gray-100)] flex items-center justify-center hover:bg-[var(--warm-gray-200)] transition-colors"
+        className="-ml-1 flex size-9 items-center justify-center rounded-md text-foreground/70 hover:bg-muted lg:hidden"
+        aria-label="Open menu"
       >
-        <Menu className="h-5 w-5 text-[var(--charcoal)]" />
+        <Menu className="size-5" />
       </button>
 
-      {/* Logo - ANDY KEERY wordmark with red rules */}
-      <div className="flex items-center">
-        <div className="flex flex-col items-center select-none">
-          <div className="h-[2px] sm:h-[3px] w-28 sm:w-40 bg-[var(--brand-red)] rounded-full" />
-          <div className="py-1 sm:py-1.5">
-            <span 
-              className="font-black text-lg sm:text-2xl tracking-tight text-[var(--charcoal)] uppercase"
-              style={{ 
-                fontStretch: 'condensed',
-                letterSpacing: '0.02em',
-              }}
-            >
-              ANDY KEERY
-            </span>
-          </div>
-          <div className="h-[2px] sm:h-[3px] w-28 sm:w-40 bg-[var(--brand-red)] rounded-full" />
-          <span className="hidden sm:block text-[10px] text-[var(--warm-gray-500)] tracking-[0.15em] mt-1 font-medium">
-            www.rent-a-fridge.co.uk
-          </span>
-        </div>
-      </div>
+      <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1.5 text-sm sm:flex">
+        {segments.map((seg, i) => {
+          const href = '/' + segments.slice(0, i + 1).join('/');
+          const last = i === segments.length - 1;
+          const label = SEGMENT_LABELS[seg] ?? decodeURIComponent(seg);
+          return (
+            <Fragment key={href}>
+              {i > 0 && <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/60" />}
+              {last ? (
+                <span className={cn('truncate font-medium text-foreground', !SEGMENT_LABELS[seg] && 'font-mono-unit text-[13px]')}>
+                  {label}
+                </span>
+              ) : (
+                <Link href={href} className="truncate text-muted-foreground hover:text-foreground">
+                  {label}
+                </Link>
+              )}
+            </Fragment>
+          );
+        })}
+      </nav>
 
-      {/* Contact Info - Right side */}
-      <div className="flex items-center gap-2 sm:gap-4 lg:gap-8">
-        {/* Phone - icon only on mobile */}
-        <a 
-          href="tel:+442892622633" 
-          className="flex items-center gap-2.5 text-sm text-[var(--charcoal)] hover:text-[var(--brand-red)] transition-colors group"
+      <div className="ml-auto flex items-center gap-2">
+        <button
+          onClick={onSearchClick}
+          className="flex h-9 items-center gap-2 rounded-md border bg-muted/40 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted md:w-72"
         >
-          <div className="w-9 h-9 rounded-xl bg-[var(--brand-red)]/10 flex items-center justify-center group-hover:bg-[var(--brand-red)]/20 transition-colors">
-            <Phone className="h-4 w-4 text-[var(--brand-red)]" />
-          </div>
-          <span className="hidden lg:inline font-semibold">+44 28 9262 2633</span>
-        </a>
-        {/* Email - hidden on mobile */}
-        <a 
-          href="mailto:info@rent-a-fridge.co.uk" 
-          className="hidden sm:flex items-center gap-2.5 text-sm text-[var(--charcoal)] hover:text-[var(--brand-red)] transition-colors group"
+          <Search className="size-4" />
+          <span className="hidden md:inline">Search…</span>
+          <kbd className="ml-auto hidden rounded border bg-white px-1.5 py-0.5 text-[10px] font-medium md:inline">Ctrl K</kbd>
+        </button>
+
+        <button
+          onClick={onNotificationsClick}
+          className="relative flex size-9 items-center justify-center rounded-md border text-foreground/70 transition-colors hover:bg-muted"
+          aria-label={`Notifications${notificationCount ? ` (${notificationCount})` : ''}`}
         >
-          <div className="w-9 h-9 rounded-xl bg-[var(--brand-red)]/10 flex items-center justify-center group-hover:bg-[var(--brand-red)]/20 transition-colors">
-            <Mail className="h-4 w-4 text-[var(--brand-red)]" />
-          </div>
-          <span className="hidden lg:inline font-medium">info@rent-a-fridge.co.uk</span>
-        </a>
-        <Button 
-          className="hidden md:flex bg-[var(--brand-red)] hover:bg-[var(--brand-red-dark)] text-white font-semibold h-10 sm:h-11 px-4 sm:px-6 rounded-xl shadow-sm hover:shadow-md transition-all"
-        >
-          CONTACT
-        </Button>
+          <Bell className="size-4" />
+          {notificationCount > 0 && (
+            <span className="tabular absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--brand-red)] px-1 text-[10px] font-semibold text-white ring-2 ring-white">
+              {notificationCount > 9 ? '9+' : notificationCount}
+            </span>
+          )}
+        </button>
+
+        {pathname !== '/bookings/new' && (
+          <Link
+            href="/bookings/new"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[var(--brand-red)] px-3 text-sm font-medium text-white shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--brand-red-dark)]"
+          >
+            <Plus className="size-4" />
+            <span className="hidden sm:inline">New booking</span>
+          </Link>
+        )}
       </div>
     </header>
   );

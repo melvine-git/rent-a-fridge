@@ -1,17 +1,44 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Pill } from '@/components/ui/status-badge';
+import { KpiCard } from '@/components/app/kpi-card';
+import { Panel } from '@/components/app/panel';
+import { EmptyState } from '@/components/app/empty-state';
+import { UnitTypeIcon, UnitCode } from '@/components/app/unit-type-icon';
 import { markDelivered, markCollected } from '@/lib/actions';
-import type { Booking, Customer, Unit, Staff } from '@/types';
+import { DeliveryChecklistComponent } from './delivery-checklist';
+import { POWER_LABELS, UNIT_SIZE_LABELS } from '@/lib/domain';
+import { daysFromToday, formatDate, formatDayDate, formatPhone } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import type { Booking, Customer, Unit, Staff, DeliveryDocket, BookingWithDetails } from '@/types';
+import {
+  Check,
+  CalendarClock,
+  CircleCheck,
+  Clock,
+  MapPin,
+  Navigation,
+  PackageCheck,
+  Phone,
+  Thermometer,
+  Truck,
+  Zap,
+  Box,
+  TriangleAlert,
+  ArrowUpRight,
+} from 'lucide-react';
 
-type JobWithDetails = Booking & { customer: Customer; unit: Unit };
+type JobWithDetails = BookingWithDetails;
+type DocketWithDetails = DeliveryDocket & { booking: Booking; customer: Customer; unit: Unit; staff: Staff };
+type JobType = 'delivery' | 'collection';
 
 interface DeliveriesViewProps {
   tomorrowDeliveries: JobWithDetails[];
@@ -19,12 +46,9 @@ interface DeliveriesViewProps {
   activeHires: JobWithDetails[];
   collectionsDue: JobWithDetails[];
   staff: Staff[];
+  allDockets: DocketWithDetails[];
+  upcomingDockets: DocketWithDetails[];
 }
-
-const powerLabels: Record<string, string> = {
-  STANDARD: '13A Standard',
-  INDUSTRIAL: '32A Industrial',
-};
 
 export function DeliveriesView({
   tomorrowDeliveries,
@@ -32,624 +56,546 @@ export function DeliveriesView({
   activeHires,
   collectionsDue,
   staff,
+  allDockets,
+  upcomingDockets,
 }: DeliveriesViewProps) {
-  const [selectedJob, setSelectedJob] = useState<JobWithDetails | null>(null);
-  const [jobType, setJobType] = useState<'delivery' | 'collection'>('delivery');
+  const router = useRouter();
+  const [job, setJob] = useState<{ booking: JobWithDetails; type: JobType } | null>(null);
+  const [selectedDocket, setSelectedDocket] = useState<DocketWithDetails | null>(null);
+  const [[todayDate, tomorrowDate]] = useState(() => {
+    const t = new Date();
+    const n = new Date(t);
+    n.setDate(n.getDate() + 1);
+    return [t, n] as const;
+  });
 
-  const allDeliveries = [...todayDeliveries, ...tomorrowDeliveries];
+  const completedDockets = allDockets
+    .filter((d) => d.status === 'COMPLETED')
+    .sort((a, b) => (b.completedAt ?? b.scheduledDate).localeCompare(a.completedAt ?? a.scheduledDate));
+  const dueIds = new Set(collectionsDue.map((c) => c.id));
+  const byTime = (a: JobWithDetails, b: JobWithDetails, key: 'deliveryTime' | 'collectionTime') =>
+    (a[key] ?? '99').localeCompare(b[key] ?? '99');
+
+  const open = (booking: JobWithDetails, type: JobType) => setJob({ booking, type });
 
   return (
-    <div className="space-y-4 sm:space-y-6">
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
-        <StatCard label="Tomorrow" count={tomorrowDeliveries.length} color="blue" />
-        <StatCard label="Today" count={todayDeliveries.length} color="amber" />
-        <StatCard label="On Hire" count={activeHires.length} color="green" />
-        <StatCard label="Collections" count={collectionsDue.length} color="red" />
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+        <KpiCard label="Deliveries today" value={todayDeliveries.length} icon={Truck} tone="scheduled" />
+        <KpiCard label="Deliveries tomorrow" value={tomorrowDeliveries.length} icon={CalendarClock} tone="neutral" />
+        <KpiCard
+          label="Collections due"
+          value={collectionsDue.length}
+          icon={PackageCheck}
+          tone={collectionsDue.length ? 'danger' : 'neutral'}
+          emphasis={collectionsDue.length > 0}
+        />
+        <KpiCard label="Units on hire" value={activeHires.length} icon={Box} tone="info" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        {/* Left: Job Lists */}
-        <div className="space-y-6">
-          {/* Tomorrow's Deliveries */}
-          <Card className="rounded-xl sm:rounded-2xl border-0 shadow-[var(--shadow-sm)] overflow-hidden">
-            <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-6 bg-gradient-to-r from-blue-50 to-white border-b border-blue-100">
-              <CardTitle className="text-sm sm:text-base flex items-center gap-2 sm:gap-2.5 font-semibold text-[var(--charcoal)]">
-                <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-blue-500" />
-                Tomorrow&apos;s Deliveries
-                <Badge variant="secondary" className="ml-auto bg-blue-100 text-blue-700 border-0 text-xs">{tomorrowDeliveries.length}</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 sm:p-4">
-              {tomorrowDeliveries.length === 0 ? (
-                <EmptyState message="No deliveries scheduled for tomorrow" />
-              ) : (
-                <div className="space-y-2">
-                  {tomorrowDeliveries.map((job, idx) => (
-                    <JobListItem
-                      key={job.id}
-                      job={job}
-                      index={idx + 1}
-                      isSelected={selectedJob?.id === job.id}
-                      onClick={() => { setSelectedJob(job); setJobType('delivery'); }}
-                    />
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+      {/* Board */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <BoardColumn
+          title="Today"
+          subtitle={formatDayDate(todayDate)}
+          accent="bg-violet-500"
+          jobs={[...todayDeliveries].sort((a, b) => byTime(a, b, 'deliveryTime'))}
+          type="delivery"
+          onOpen={open}
+          emptyText="No deliveries today"
+        />
+        <BoardColumn
+          title="Tomorrow"
+          subtitle={formatDayDate(tomorrowDate)}
+          accent="bg-stone-400"
+          jobs={[...tomorrowDeliveries].sort((a, b) => byTime(a, b, 'deliveryTime'))}
+          type="delivery"
+          onOpen={open}
+          emptyText="Nothing scheduled for tomorrow"
+        />
+        <BoardColumn
+          title="Collections due"
+          subtitle="Hire period ended"
+          accent="bg-red-500"
+          jobs={[...collectionsDue].sort((a, b) => a.endDate.localeCompare(b.endDate))}
+          type="collection"
+          onOpen={open}
+          emptyText="No collections due"
+        />
+      </div>
 
-          {/* Active Hires - Collections */}
-          <Card className="rounded-xl sm:rounded-2xl border-0 shadow-[var(--shadow-sm)] overflow-hidden">
-            <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-6 bg-gradient-to-r from-green-50 to-white border-b border-green-100">
-              <CardTitle className="text-sm sm:text-base flex items-center gap-2 sm:gap-2.5 font-semibold text-[var(--charcoal)]">
-                <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-green-500" />
-                Active Hires
-                <Badge variant="secondary" className="ml-auto bg-green-100 text-green-700 border-0 text-xs">{activeHires.length}</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 sm:p-4">
-              {activeHires.length === 0 ? (
-                <EmptyState message="No active hires" />
-              ) : (
-                <div className="space-y-2">
-                  {activeHires.map((job) => (
-                    <JobListItem
-                      key={job.id}
-                      job={job}
-                      isSelected={selectedJob?.id === job.id}
-                      onClick={() => { setSelectedJob(job); setJobType('collection'); }}
-                      isOnHire
-                      isDue={collectionsDue.some(c => c.id === job.id)}
-                    />
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+      <div className="grid gap-4 xl:grid-cols-5">
+        {/* Active hires */}
+        <Panel title="On hire" count={activeHires.length} description="Units currently with customers" className="xl:col-span-3">
+          {activeHires.length === 0 ? (
+            <EmptyState compact icon={Box} title="No active hires" />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+                    <th className="px-4 py-2.5 font-medium">Unit</th>
+                    <th className="px-4 py-2.5 font-medium">Customer</th>
+                    <th className="px-4 py-2.5 font-medium">Return</th>
+                    <th className="w-28 px-4 py-2.5" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {[...activeHires]
+                    .sort((a, b) => a.endDate.localeCompare(b.endDate))
+                    .map((h) => {
+                      const d = daysFromToday(h.endDate);
+                      return (
+                        <tr key={h.id} className="hover:bg-muted/40">
+                          <td className="px-4 py-2.5">
+                            <span className="flex items-center gap-2">
+                              <UnitTypeIcon type={h.unit.unitType} />
+                              <UnitCode id={h.unit.id} />
+                            </span>
+                          </td>
+                          <td className="max-w-[220px] truncate px-4 py-2.5 text-foreground">{h.customer.name}</td>
+                          <td className="px-4 py-2.5 whitespace-nowrap">
+                            {dueIds.has(h.id) ? (
+                              <Pill tone="danger">{d < 0 ? `${-d}d overdue` : 'Due today'}</Pill>
+                            ) : (
+                              <span className="tabular text-muted-foreground">{formatDate(h.endDate)}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5 text-right">
+                            <Button variant="outline" size="sm" onClick={() => open(h, 'collection')}>
+                              Collect
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
 
-        {/* Right: Phone Preview */}
-        <div className="flex justify-center order-first lg:order-last">
-          <PhonePreview 
-            job={selectedJob} 
-            jobType={jobType}
-            staff={staff}
-            onComplete={() => setSelectedJob(null)}
-          />
+        <div className="space-y-4 xl:col-span-2">
+          {upcomingDockets.length > 0 && (
+            <Panel title="Scheduled dockets" count={upcomingDockets.length}>
+              <ul className="divide-y">
+                {upcomingDockets.slice(0, 5).map((d) => (
+                  <li key={d.id}>
+                    <button onClick={() => setSelectedDocket(d)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/40">
+                      <Truck className="size-4 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 text-sm">
+                          <UnitCode id={d.unit.id} />
+                          <span className="truncate text-muted-foreground">{d.customer.name}</span>
+                        </div>
+                      </div>
+                      <span className="tabular shrink-0 text-xs text-muted-foreground">
+                        {formatDate(d.scheduledDate)}
+                        {d.scheduledTime && ` · ${d.scheduledTime}`}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
+
+          <Panel title="Recently completed" count={completedDockets.length}>
+            {completedDockets.length === 0 ? (
+              <EmptyState compact icon={CircleCheck} title="No completed jobs yet" />
+            ) : (
+              <ul className="divide-y">
+                {completedDockets.slice(0, 6).map((d) => (
+                  <li key={d.id} className="flex items-center gap-3 px-4 py-3">
+                    <span
+                      className={cn(
+                        'flex size-7 shrink-0 items-center justify-center rounded-md',
+                        d.type === 'DELIVERY' ? 'bg-violet-50 text-violet-600' : 'bg-emerald-50 text-emerald-600'
+                      )}
+                    >
+                      {d.type === 'DELIVERY' ? <Truck className="size-3.5" /> : <PackageCheck className="size-3.5" />}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 text-sm">
+                        <UnitCode id={d.unit.id} />
+                        <span className="truncate text-muted-foreground">{d.customer.name}</span>
+                      </div>
+                      {d.signedBy && <div className="truncate text-xs text-muted-foreground">Signed by {d.signedBy}</div>}
+                    </div>
+                    <span className="tabular shrink-0 text-xs text-muted-foreground">
+                      {formatDate(d.completedAt ? d.completedAt.split('T')[0] : d.scheduledDate)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
         </div>
       </div>
+
+      {/* Job drawer */}
+      <Sheet open={!!job} onOpenChange={(o) => !o && setJob(null)}>
+        <SheetContent side="right" className="w-full gap-0 sm:max-w-lg">
+          {job && (
+            <JobSheet
+              key={job.booking.id + job.type}
+              job={job.booking}
+              type={job.type}
+              staff={staff}
+              onComplete={() => {
+                setJob(null);
+                router.refresh();
+              }}
+            />
+          )}
+        </SheetContent>
+      </Sheet>
+
+      <Dialog open={!!selectedDocket} onOpenChange={(o) => !o && setSelectedDocket(null)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold">Delivery checklist</DialogTitle>
+          </DialogHeader>
+          {selectedDocket && (
+            <DeliveryChecklistComponent
+              docket={selectedDocket}
+              onComplete={() => {
+                setSelectedDocket(null);
+                router.refresh();
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function StatCard({ label, count, color }: { label: string; count: number; color: string }) {
-  const colorClasses: Record<string, { bg: string; text: string; dot: string }> = {
-    blue: { bg: 'bg-white', text: 'text-blue-700', dot: 'bg-blue-500' },
-    amber: { bg: 'bg-white', text: 'text-amber-700', dot: 'bg-amber-500' },
-    green: { bg: 'bg-white', text: 'text-green-700', dot: 'bg-green-500' },
-    red: { bg: 'bg-white', text: 'text-red-700', dot: 'bg-red-500' },
-  };
-  const c = colorClasses[color];
-  
+function BoardColumn({
+  title,
+  subtitle,
+  accent,
+  jobs,
+  type,
+  onOpen,
+  emptyText,
+}: {
+  title: string;
+  subtitle: string;
+  accent: string;
+  jobs: JobWithDetails[];
+  type: JobType;
+  onOpen: (job: JobWithDetails, type: JobType) => void;
+  emptyText: string;
+}) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -2 }}
-      className={cn('rounded-xl sm:rounded-2xl shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] p-3 sm:p-5 text-center transition-shadow cursor-default', c.bg)}
-    >
-      <div className={cn('text-2xl sm:text-4xl font-bold', c.text)}>{count}</div>
-      <div className="flex items-center justify-center gap-1.5 sm:gap-2 mt-1">
-        <span className={cn('w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full', c.dot)} />
-        <span className="text-xs sm:text-sm font-medium text-[var(--warm-gray-600)]">{label}</span>
+    <section className="flex flex-col rounded-[var(--radius-lg)] border bg-muted/40">
+      <header className="flex items-center gap-2 px-4 py-3">
+        <span className={cn('size-2 rounded-full', accent)} />
+        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        <span className="tabular rounded bg-white px-1.5 py-0.5 text-xs font-medium text-muted-foreground ring-1 ring-border">{jobs.length}</span>
+        <span className="ml-auto text-xs text-muted-foreground">{subtitle}</span>
+      </header>
+      <div className="flex-1 space-y-2 px-2 pb-2">
+        {jobs.length === 0 ? (
+          <div className="flex h-28 items-center justify-center rounded-md border border-dashed bg-white/60 text-sm text-muted-foreground">
+            {emptyText}
+          </div>
+        ) : (
+          jobs.map((j, i) => <JobCard key={j.id} job={j} type={type} index={i + 1} onClick={() => onOpen(j, type)} />)
+        )}
       </div>
-    </motion.div>
+    </section>
   );
 }
 
-function JobListItem({
-  job,
-  index,
-  isSelected,
-  onClick,
-  isOnHire,
-  isDue,
-}: {
-  job: JobWithDetails;
-  index?: number;
-  isSelected: boolean;
-  onClick: () => void;
-  isOnHire?: boolean;
-  isDue?: boolean;
-}) {
+function JobCard({ job, type, index, onClick }: { job: JobWithDetails; type: JobType; index: number; onClick: () => void }) {
+  const time = type === 'delivery' ? job.deliveryTime : job.collectionTime;
+  const overdue = type === 'collection' ? -daysFromToday(job.endDate) : 0;
   return (
-    <motion.button
-      whileHover={{ scale: 1.01 }}
-      whileTap={{ scale: 0.99 }}
+    <button
       onClick={onClick}
-      className={cn(
-        'w-full p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl border-2 text-left transition-all',
-        isSelected
-          ? 'border-[var(--brand-red)] bg-red-50 shadow-md'
-          : 'border-transparent bg-[var(--warm-gray-50)] hover:bg-[var(--warm-gray-100)]'
-      )}
+      className="group block w-full rounded-md border bg-white p-3 text-left shadow-[var(--shadow-xs)] transition-shadow outline-none hover:shadow-[var(--shadow-md)] focus-visible:ring-2 focus-visible:ring-ring/40"
     >
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-2 sm:gap-3">
-          {index && (
-            <span className="w-6 h-6 sm:w-7 sm:h-7 rounded-md sm:rounded-lg bg-[var(--brand-red)] text-white text-[10px] sm:text-xs font-bold flex items-center justify-center shadow-sm">
-              {index}
-            </span>
-          )}
-          <div>
-            <div className="font-mono-unit text-sm sm:text-base text-[var(--charcoal)]">{job.unit.id}</div>
-            <div className="text-xs sm:text-sm text-[var(--warm-gray-500)] truncate max-w-[120px] sm:max-w-none">{job.customer.name}</div>
-          </div>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="tabular flex size-5 items-center justify-center rounded bg-foreground text-[10px] font-semibold text-background">
+            {index}
+          </span>
+          <UnitCode id={job.unit.id} />
+          <span className="text-xs text-muted-foreground">{UNIT_SIZE_LABELS[job.unit.size]}</span>
         </div>
-        <div className="text-right space-y-1">
-          <Badge variant="secondary" className="text-[10px] sm:text-xs bg-[var(--warm-gray-200)] text-[var(--charcoal)] border-0">
-            {job.unit.size}
-          </Badge>
-          {isOnHire && (
-            <div>
-              {isDue ? (
-                <Badge className="bg-red-100 text-red-700 text-[10px] sm:text-xs border-0 font-semibold">Due</Badge>
-              ) : (
-                <Badge className="bg-blue-100 text-blue-700 text-[10px] sm:text-xs border-0">On Hire</Badge>
-              )}
+        <span className="tabular flex items-center gap-1 text-xs font-medium text-foreground">
+          <Clock className="size-3 text-muted-foreground" />
+          {time ?? 'Any time'}
+        </span>
+      </div>
+      <div className="mt-2 truncate text-sm font-medium text-foreground">{job.customer.name}</div>
+      <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+        <MapPin className="size-3 shrink-0" />
+        <span className="truncate">{job.deliveryAddress}</span>
+      </div>
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+        {type === 'delivery' ? (
+          <>
+            <Tag icon={<Thermometer className="size-3" />}>{job.tempRequired}°C</Tag>
+            <Tag icon={<Zap className="size-3" />}>{job.powerAvailable === 'INDUSTRIAL' ? '32A' : '13A'}</Tag>
+            {job.cableLength && <Tag>{job.cableLength} cable</Tag>}
+          </>
+        ) : overdue > 0 ? (
+          <Pill tone="danger">{overdue}d overdue</Pill>
+        ) : (
+          <Pill tone="warning">Due today</Pill>
+        )}
+      </div>
+    </button>
+  );
+}
+
+function Tag({ icon, children }: { icon?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+      {icon}
+      {children}
+    </span>
+  );
+}
+
+type CheckKey =
+  | 'unitClean'
+  | 'doorsSealed'
+  | 'tempVerified'
+  | 'powerConnected'
+  | 'powerSupplyChecked'
+  | 'powerCableConnected'
+  | 'hitchLockSecured'
+  | 'wheelClampSecured'
+  | 'doorLockSecured';
+
+function checklistFor(job: JobWithDetails, type: JobType): { key: CheckKey; label: string }[] {
+  const acc = job.accessories;
+  if (type === 'delivery') {
+    return [
+      { key: 'unitClean', label: 'Unit cleaned and inspected' },
+      { key: 'doorsSealed', label: 'Door seals checked' },
+      { key: 'powerSupplyChecked', label: `Site power verified (${POWER_LABELS[job.powerAvailable]})` },
+      { key: 'powerCableConnected', label: `Power cable connected${job.cableLength ? ` (${job.cableLength})` : ''}` },
+      { key: 'powerConnected', label: 'Unit powered on and running' },
+      { key: 'tempVerified', label: `Temperature set to ${job.tempRequired}°C` },
+      ...(acc?.hitchLock ? [{ key: 'hitchLockSecured' as const, label: 'Hitch lock fitted' }] : []),
+      ...(acc?.wheelClamp ? [{ key: 'wheelClampSecured' as const, label: 'Wheel clamp fitted' }] : []),
+      ...(acc?.doorLock ? [{ key: 'doorLockSecured' as const, label: 'Door lock fitted' }] : []),
+    ];
+  }
+  return [
+    { key: 'powerConnected', label: 'Power disconnected and cable recovered' },
+    { key: 'unitClean', label: 'Unit emptied and cleaned out' },
+    { key: 'doorsSealed', label: 'Unit inspected for damage' },
+    { key: 'tempVerified', label: 'Condition photos taken' },
+    ...(acc?.hitchLock ? [{ key: 'hitchLockSecured' as const, label: 'Hitch lock recovered' }] : []),
+    ...(acc?.wheelClamp ? [{ key: 'wheelClampSecured' as const, label: 'Wheel clamp recovered' }] : []),
+    ...(acc?.doorLock ? [{ key: 'doorLockSecured' as const, label: 'Door lock recovered' }] : []),
+  ];
+}
+
+function JobSheet({ job, type, staff, onComplete }: { job: JobWithDetails; type: JobType; staff: Staff[]; onComplete: () => void }) {
+  const [isPending, startTransition] = useTransition();
+  const items = checklistFor(job, type);
+  const [checked, setChecked] = useState<Record<CheckKey, boolean>>({
+    unitClean: false,
+    doorsSealed: false,
+    tempVerified: false,
+    powerConnected: false,
+    powerSupplyChecked: false,
+    powerCableConnected: false,
+    hitchLockSecured: false,
+    wheelClampSecured: false,
+    doorLockSecured: false,
+  });
+  const [signature, setSignature] = useState('');
+  const [hasDamage, setHasDamage] = useState(false);
+  const [damageNotes, setDamageNotes] = useState('');
+
+  const done = items.filter((i) => checked[i.key]).length;
+  const ready = done === items.length && signature.trim().length > 0 && (!hasDamage || damageNotes.trim().length > 0);
+  const driver = staff.find((s) => s.role === 'DRIVER');
+  const isDelivery = type === 'delivery';
+
+  const handleConfirm = () => {
+    startTransition(async () => {
+      const payload = {
+        bookingId: job.id,
+        staffId: driver?.id || 'staff-01',
+        checklist: { ...checked, tempSetting: job.tempRequired, cableLengthUsed: job.cableLength },
+        tempSet: isDelivery ? job.tempRequired : 0,
+        signedBy: signature,
+        damageNotes: hasDamage ? damageNotes : undefined,
+        photoUrls: [],
+      };
+      const result = isDelivery ? await markDelivered(payload) : await markCollected(payload);
+      if (result.success) {
+        toast.success(isDelivery ? 'Delivery confirmed' : 'Collection confirmed', {
+          description: `${job.unit.id} is now ${isDelivery ? 'on hire' : 'available'}`,
+        });
+        onComplete();
+      } else {
+        toast.error(`Could not confirm ${type}`, { description: result.error });
+      }
+    });
+  };
+
+  return (
+    <>
+      <SheetHeader className="border-b px-5 py-4">
+        <div className="flex items-center gap-2">
+          <Pill tone={isDelivery ? 'scheduled' : 'warning'} showDot>
+            {isDelivery ? 'Delivery' : 'Collection'}
+          </Pill>
+          <span className="font-mono-unit text-xs text-muted-foreground">{job.id}</span>
+        </div>
+        <SheetTitle className="mt-1.5 flex items-center gap-2 text-lg font-semibold">
+          <UnitTypeIcon type={job.unit.unitType} className="size-5" />
+          <span className="font-mono-unit">{job.unit.id}</span>
+          <span className="font-normal text-muted-foreground">→</span>
+          <span className="truncate">{job.customer.name}</span>
+        </SheetTitle>
+        <SheetDescription>
+          {isDelivery
+            ? `${formatDayDate(job.startDate)}${job.deliveryTime ? ` at ${job.deliveryTime}` : ''}`
+            : `On hire since ${formatDate(job.startDate)} · due back ${formatDate(job.endDate)}`}
+        </SheetDescription>
+      </SheetHeader>
+
+      <div className="scrollbar-thin flex-1 space-y-6 overflow-y-auto px-5 py-5">
+        {/* Site */}
+        <div className="space-y-3">
+          <div className="rounded-md border p-3">
+            <div className="flex items-start gap-3">
+              <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-foreground">{job.deliveryAddress}</div>
+                {job.accessInstructions && <p className="mt-1 text-xs text-muted-foreground">{job.accessInstructions}</p>}
+              </div>
+            </div>
+            <div className="mt-3 flex items-center gap-3 border-t pt-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm text-foreground">{job.contactName}</div>
+                <div className="tabular text-xs text-muted-foreground">{formatPhone(job.contactPhone)}</div>
+              </div>
+              <a href={`tel:${job.contactPhone}`} className="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium hover:bg-muted">
+                <Phone className="size-3.5" /> Call
+              </a>
+              <a
+                href={`https://maps.google.com/?q=${encodeURIComponent(job.deliveryAddress)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium hover:bg-muted"
+              >
+                <Navigation className="size-3.5" /> Navigate
+              </a>
+            </div>
+          </div>
+
+          {isDelivery && (
+            <div className="grid grid-cols-3 divide-x rounded-md border text-center">
+              <Spec label="Temperature" value={`${job.tempRequired}°C`} />
+              <Spec label="Power" value={job.powerAvailable === 'INDUSTRIAL' ? '32A' : '13A'} />
+              <Spec label="Cable" value={job.cableLength ?? '—'} />
             </div>
           )}
         </div>
-      </div>
-    </motion.button>
-  );
-}
 
-function EmptyState({ message }: { message: string }) {
-  return (
-    <div className="py-6 sm:py-10 text-center">
-      <div className="text-3xl sm:text-4xl mb-2 sm:mb-3">📦</div>
-      <div className="text-xs sm:text-sm text-[var(--warm-gray-500)] font-medium">{message}</div>
-    </div>
-  );
-}
-
-function PhonePreview({
-  job,
-  jobType,
-  staff,
-  onComplete,
-}: {
-  job: JobWithDetails | null;
-  jobType: 'delivery' | 'collection';
-  staff: Staff[];
-  onComplete: () => void;
-}) {
-  return (
-    <div className="w-full max-w-[320px]">
-      {/* Phone Frame */}
-      <div className="bg-gray-900 rounded-[2rem] sm:rounded-[2.5rem] p-2 sm:p-3 shadow-2xl">
-        {/* Notch */}
-        <div className="bg-black rounded-t-[1.5rem] sm:rounded-t-[2rem] pt-4 sm:pt-6 pb-1 sm:pb-2 relative">
-          <div className="absolute top-1.5 sm:top-2 left-1/2 -translate-x-1/2 w-20 sm:w-24 h-5 sm:h-6 bg-gray-900 rounded-full" />
-        </div>
-        
-        {/* Screen */}
-        <div className="bg-white rounded-b-[1.5rem] sm:rounded-b-[2rem] min-h-[480px] sm:min-h-[560px] overflow-hidden">
-          <AnimatePresence mode="wait">
-            {job ? (
-              <motion.div
-                key={job.id + jobType}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="h-full"
-              >
-                {jobType === 'delivery' ? (
-                  <DeliveryJobCard job={job} staff={staff} onComplete={onComplete} />
-                ) : (
-                  <CollectionJobCard job={job} staff={staff} onComplete={onComplete} />
-                )}
-              </motion.div>
-            ) : (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="h-full flex items-center justify-center p-6 text-center"
-              >
-                <div>
-                  <div className="text-6xl mb-4">📱</div>
-                  <div className="text-lg font-semibold text-[var(--charcoal)]">
-                    Andy&apos;s Phone
-                  </div>
-                  <div className="text-sm text-[var(--grey-500)] mt-1">
-                    Select a job from the list to preview
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DeliveryJobCard({
-  job,
-  staff,
-  onComplete,
-}: {
-  job: JobWithDetails;
-  staff: Staff[];
-  onComplete: () => void;
-}) {
-  const [isPending, startTransition] = useTransition();
-  const [checklist, setChecklist] = useState({
-    unitClean: false,
-    doorsSealed: false,
-    tempVerified: false,
-    powerConnected: false,
-  });
-  const [signature, setSignature] = useState('');
-  const [hasDamage, setHasDamage] = useState(false);
-  const [damageNotes, setDamageNotes] = useState('');
-
-  const allChecked = Object.values(checklist).every(Boolean) && signature.trim().length > 0;
-  const driver = staff.find(s => s.role === 'DRIVER');
-
-  const handleConfirm = () => {
-    startTransition(async () => {
-      const result = await markDelivered({
-        bookingId: job.id,
-        staffId: driver?.id || 'staff-01',
-        checklist,
-        tempSet: job.tempRequired,
-        signedBy: signature,
-        damageNotes: hasDamage ? damageNotes : undefined,
-        photoUrls: [],
-      });
-
-      if (result.success) {
-        toast.success('Delivery confirmed!', {
-          description: `${job.unit.id} is now ON HIRE`,
-        });
-        onComplete();
-      } else {
-        toast.error('Failed to confirm delivery', {
-          description: result.error,
-        });
-      }
-    });
-  };
-
-  return (
-    <div className="p-4 space-y-4 text-sm">
-      {/* Header */}
-      <div className="bg-[var(--brand-red)] text-white -m-4 mb-0 p-4 rounded-t-lg">
-        <div className="text-xs uppercase tracking-wide opacity-80">Delivery</div>
-        <div className="text-xl font-bold">{job.unit.id}</div>
-        <div className="text-sm opacity-90">{job.unit.size} • {powerLabels[job.unit.powerType]}</div>
-      </div>
-
-      {/* Unit Specs */}
-      <div className="bg-gray-50 rounded-lg p-3">
-        <div className="text-xs text-gray-500 uppercase mb-1">Unit Location</div>
-        <div className="font-semibold">Yard Bay A-{job.unit.id.split('-')[1]}</div>
-      </div>
-
-      {/* Contact - Tap to Call */}
-      <a
-        href={`tel:${job.contactPhone}`}
-        className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors"
-      >
-        <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white">
-          📞
-        </div>
+        {/* Checklist */}
         <div>
-          <div className="font-semibold text-blue-900">{job.contactName}</div>
-          <div className="text-blue-700">{job.contactPhone}</div>
-        </div>
-      </a>
-
-      {/* Address - Tap to Navigate */}
-      <a
-        href={`https://maps.google.com/?q=${encodeURIComponent(job.deliveryAddress)}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="block p-3 bg-green-50 rounded-lg border border-green-200 hover:bg-green-100 transition-colors"
-      >
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white flex-shrink-0">
-            📍
-          </div>
-          <div>
-            <div className="font-semibold text-green-900">{job.deliveryAddress}</div>
-            {job.accessInstructions && (
-              <div className="text-green-700 text-xs mt-1">📝 {job.accessInstructions}</div>
-            )}
-          </div>
-        </div>
-      </a>
-
-      {/* Requirements */}
-      <div className="grid grid-cols-2 gap-2">
-        <div className="bg-cyan-50 rounded-lg p-3 text-center border border-cyan-200">
-          <div className="text-2xl">🌡️</div>
-          <div className="font-bold text-cyan-900">{job.tempRequired}°C</div>
-          <div className="text-xs text-cyan-700">Temperature</div>
-        </div>
-        <div className="bg-amber-50 rounded-lg p-3 text-center border border-amber-200">
-          <div className="text-2xl">⚡</div>
-          <div className="font-bold text-amber-900">{powerLabels[job.powerAvailable]}</div>
-          <div className="text-xs text-amber-700">Power</div>
-        </div>
-      </div>
-
-      {/* Checklist */}
-      <div className="space-y-2">
-        <div className="font-semibold text-gray-700">Pre-Delivery Checklist</div>
-        {Object.entries(checklist).map(([key, value]) => (
-          <label
-            key={key}
-            className={cn(
-              'flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors',
-              value ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200'
-            )}
-          >
-            <input
-              type="checkbox"
-              checked={value}
-              onChange={(e) => setChecklist(prev => ({ ...prev, [key]: e.target.checked }))}
-              className="w-5 h-5 rounded"
-            />
-            <span className={value ? 'text-green-800' : 'text-gray-700'}>
-              {key === 'unitClean' && 'Unit cleaned & inspected'}
-              {key === 'doorsSealed' && 'Doors sealed properly'}
-              {key === 'tempVerified' && 'Temperature set & verified'}
-              {key === 'powerConnected' && 'Power connected & working'}
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-foreground">{isDelivery ? 'Handover checklist' : 'Collection checklist'}</h3>
+            <span className="tabular text-xs text-muted-foreground">
+              {done}/{items.length} complete
             </span>
+          </div>
+          <div className="mb-3 h-1 overflow-hidden rounded-full bg-muted">
+            <div className="h-full bg-emerald-500 transition-all" style={{ width: `${(done / items.length) * 100}%` }} />
+          </div>
+          <ul className="divide-y rounded-md border">
+            {items.map((item) => {
+              const on = checked[item.key];
+              return (
+                <li key={item.key}>
+                  <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-muted/40">
+                    <input
+                      type="checkbox"
+                      className="peer sr-only"
+                      checked={on}
+                      onChange={(e) => setChecked((p) => ({ ...p, [item.key]: e.target.checked }))}
+                    />
+                    <span
+                      className={cn(
+                        'flex size-5 shrink-0 items-center justify-center rounded border transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-ring/50',
+                        on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-input bg-white'
+                      )}
+                    >
+                      {on && <Check className="size-3.5" strokeWidth={3} />}
+                    </span>
+                    <span className={cn('text-sm', on ? 'text-muted-foreground line-through decoration-muted-foreground/40' : 'text-foreground')}>
+                      {item.label}
+                    </span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        {/* Damage */}
+        <div className="space-y-2">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+            <input type="checkbox" checked={hasDamage} onChange={(e) => setHasDamage(e.target.checked)} className="size-4 accent-[var(--brand-red)]" />
+            <TriangleAlert className="size-4 text-amber-600" /> Report damage or issue
           </label>
-        ))}
+          {hasDamage && (
+            <textarea
+              placeholder="Describe the damage, location on the unit and any customer comments"
+              value={damageNotes}
+              onChange={(e) => setDamageNotes(e.target.value)}
+              className="min-h-20 w-full resize-none rounded-lg border border-input px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            />
+          )}
+        </div>
+
+        {/* Sign-off */}
+        <label className="block space-y-1.5">
+          <span className="text-[13px] font-medium text-foreground">
+            Customer sign-off <span className="text-[var(--brand-red)]">*</span>
+          </span>
+          <Input placeholder="Full name of person signing" value={signature} onChange={(e) => setSignature(e.target.value)} className="h-9" />
+        </label>
       </div>
 
-      {/* Damage */}
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={hasDamage}
-          onChange={(e) => setHasDamage(e.target.checked)}
-          className="w-4 h-4 rounded"
-        />
-        <span>Report damage</span>
-      </label>
-      {hasDamage && (
-        <Input
-          placeholder="Describe damage..."
-          value={damageNotes}
-          onChange={(e) => setDamageNotes(e.target.value)}
-        />
-      )}
-
-      {/* Signature */}
-      <div>
-        <div className="text-xs text-gray-500 mb-1">Customer Signature</div>
-        <Input
-          placeholder="Customer name..."
-          value={signature}
-          onChange={(e) => setSignature(e.target.value)}
-        />
+      <div className="flex items-center gap-2 border-t bg-white px-5 py-4">
+        <Link
+          href={`/bookings/${job.id}`}
+          className="inline-flex h-10 items-center gap-1.5 rounded-md border px-3 text-sm font-medium hover:bg-muted"
+        >
+          Booking <ArrowUpRight className="size-4" />
+        </Link>
+        <Button
+          onClick={handleConfirm}
+          disabled={!ready || isPending}
+          className={cn('h-10 flex-1 text-sm font-semibold', isDelivery ? 'hover:bg-[var(--brand-red-dark)]' : 'bg-emerald-600 hover:bg-emerald-700')}
+        >
+          <CircleCheck />
+          {isPending ? 'Confirming…' : isDelivery ? 'Confirm delivery' : 'Confirm collection'}
+        </Button>
       </div>
-
-      {/* Confirm Button */}
-      <Button
-        onClick={handleConfirm}
-        disabled={!allChecked || isPending}
-        className="w-full h-12 bg-[var(--brand-red)] hover:bg-[var(--brand-red-dark)] text-white font-bold text-base"
-      >
-        {isPending ? 'Confirming...' : '✓ Confirm Delivery'}
-      </Button>
-    </div>
+    </>
   );
 }
 
-function CollectionJobCard({
-  job,
-  staff,
-  onComplete,
-}: {
-  job: JobWithDetails;
-  staff: Staff[];
-  onComplete: () => void;
-}) {
-  const [isPending, startTransition] = useTransition();
-  const [checklist, setChecklist] = useState({
-    unitClean: false,
-    doorsSealed: false,
-    tempVerified: false,
-    powerConnected: false,
-  });
-  const [signature, setSignature] = useState('');
-  const [hasDamage, setHasDamage] = useState(false);
-  const [damageNotes, setDamageNotes] = useState('');
-
-  const allChecked = Object.values(checklist).every(Boolean) && signature.trim().length > 0;
-  const driver = staff.find(s => s.role === 'DRIVER');
-
-  const handleConfirm = () => {
-    startTransition(async () => {
-      const result = await markCollected({
-        bookingId: job.id,
-        staffId: driver?.id || 'staff-01',
-        checklist,
-        tempSet: 0,
-        signedBy: signature,
-        damageNotes: hasDamage ? damageNotes : undefined,
-        photoUrls: [],
-      });
-
-      if (result.success) {
-        toast.success('Collection confirmed!', {
-          description: `${job.unit.id} is now AVAILABLE`,
-        });
-        onComplete();
-      } else {
-        toast.error('Failed to confirm collection', {
-          description: result.error,
-        });
-      }
-    });
-  };
-
+function Spec({ label, value }: { label: string; value: string }) {
   return (
-    <div className="p-4 space-y-4 text-sm">
-      {/* Header */}
-      <div className="bg-green-600 text-white -m-4 mb-0 p-4 rounded-t-lg">
-        <div className="text-xs uppercase tracking-wide opacity-80">Collection</div>
-        <div className="text-xl font-bold">{job.unit.id}</div>
-        <div className="text-sm opacity-90">On hire since {job.startDate}</div>
-      </div>
-
-      {/* Contact - Tap to Call */}
-      <a
-        href={`tel:${job.contactPhone}`}
-        className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors"
-      >
-        <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white">
-          📞
-        </div>
-        <div>
-          <div className="font-semibold text-blue-900">{job.contactName}</div>
-          <div className="text-blue-700">{job.contactPhone}</div>
-        </div>
-      </a>
-
-      {/* Address - Tap to Navigate */}
-      <a
-        href={`https://maps.google.com/?q=${encodeURIComponent(job.deliveryAddress)}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="block p-3 bg-green-50 rounded-lg border border-green-200 hover:bg-green-100 transition-colors"
-      >
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white flex-shrink-0">
-            📍
-          </div>
-          <div>
-            <div className="font-semibold text-green-900">{job.deliveryAddress}</div>
-            {job.accessInstructions && (
-              <div className="text-green-700 text-xs mt-1">📝 {job.accessInstructions}</div>
-            )}
-          </div>
-        </div>
-      </a>
-
-      {/* Collection Checklist */}
-      <div className="space-y-2">
-        <div className="font-semibold text-gray-700">Collection Checklist</div>
-        <label
-          className={cn(
-            'flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors',
-            checklist.powerConnected ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200'
-          )}
-        >
-          <input
-            type="checkbox"
-            checked={checklist.powerConnected}
-            onChange={(e) => setChecklist(prev => ({ ...prev, powerConnected: e.target.checked }))}
-            className="w-5 h-5 rounded"
-          />
-          <span className={checklist.powerConnected ? 'text-green-800' : 'text-gray-700'}>
-            Power disconnected
-          </span>
-        </label>
-        <label
-          className={cn(
-            'flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors',
-            checklist.unitClean ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200'
-          )}
-        >
-          <input
-            type="checkbox"
-            checked={checklist.unitClean}
-            onChange={(e) => setChecklist(prev => ({ ...prev, unitClean: e.target.checked }))}
-            className="w-5 h-5 rounded"
-          />
-          <span className={checklist.unitClean ? 'text-green-800' : 'text-gray-700'}>
-            Unit cleaned out
-          </span>
-        </label>
-        <label
-          className={cn(
-            'flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors',
-            checklist.doorsSealed ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200'
-          )}
-        >
-          <input
-            type="checkbox"
-            checked={checklist.doorsSealed}
-            onChange={(e) => setChecklist(prev => ({ ...prev, doorsSealed: e.target.checked }))}
-            className="w-5 h-5 rounded"
-          />
-          <span className={checklist.doorsSealed ? 'text-green-800' : 'text-gray-700'}>
-            Unit inspected - no damage
-          </span>
-        </label>
-        <label
-          className={cn(
-            'flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors',
-            checklist.tempVerified ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200'
-          )}
-        >
-          <input
-            type="checkbox"
-            checked={checklist.tempVerified}
-            onChange={(e) => setChecklist(prev => ({ ...prev, tempVerified: e.target.checked }))}
-            className="w-5 h-5 rounded"
-          />
-          <span className={checklist.tempVerified ? 'text-green-800' : 'text-gray-700'}>
-            Photos taken
-          </span>
-        </label>
-      </div>
-
-      {/* Damage */}
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={hasDamage}
-          onChange={(e) => setHasDamage(e.target.checked)}
-          className="w-4 h-4 rounded"
-        />
-        <span>Report damage</span>
-      </label>
-      {hasDamage && (
-        <Input
-          placeholder="Describe damage..."
-          value={damageNotes}
-          onChange={(e) => setDamageNotes(e.target.value)}
-        />
-      )}
-
-      {/* Signature */}
-      <div>
-        <div className="text-xs text-gray-500 mb-1">Customer Sign-off</div>
-        <Input
-          placeholder="Customer name..."
-          value={signature}
-          onChange={(e) => setSignature(e.target.value)}
-        />
-      </div>
-
-      {/* Confirm Button */}
-      <Button
-        onClick={handleConfirm}
-        disabled={!allChecked || isPending}
-        className="w-full h-12 bg-green-600 hover:bg-green-700 text-white font-bold text-base"
-      >
-        {isPending ? 'Confirming...' : '✓ Confirm Collection'}
-      </Button>
+    <div className="px-3 py-2.5">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="tabular text-sm font-semibold text-foreground">{value}</div>
     </div>
   );
 }

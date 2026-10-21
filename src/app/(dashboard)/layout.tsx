@@ -1,9 +1,13 @@
 import { Shell } from '@/components/layout/shell';
+import { getShellData } from '@/lib/actions';
 
-export default function DashboardLayout({
+export const dynamic = 'force-dynamic';
+
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <Shell>{children}</Shell>;
+  const data = await getShellData();
+  return <Shell data={data}>{children}</Shell>;
 }
