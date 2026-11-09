@@ -1554,7 +1554,42 @@ export async function getDashboardData() {
   }
   const upcoming = [...waiting.entries()].map(([reference, lines]) => ({ reference, lines, startDate: lines[0].startDate }));
 
+  // Recent activity: signed jobs, new bookings and service work, newest first
+  const customerOf = (bookingId: string) => db.customers.find((c) => c.id === db.bookings.find((b) => b.id === bookingId)?.customerId)?.name ?? 'Unknown customer';
+  const refOf = (bookingId: string) => {
+    const b = db.bookings.find((x) => x.id === bookingId);
+    return b ? groupIdOf(b) : bookingId;
+  };
+  const activity: { id: string; kind: 'DELIVERED' | 'COLLECTED' | 'BOOKED' | 'SERVICE'; at: string; title: string; detail: string; href: string }[] = [
+    ...db.dockets
+      .filter((d) => d.status === 'COMPLETED' && d.completedAt)
+      .map((d) => ({
+        id: d.id,
+        kind: d.type === 'DELIVERY' ? ('DELIVERED' as const) : ('COLLECTED' as const),
+        at: d.completedAt!,
+        title: `${d.unitId} ${d.type === 'DELIVERY' ? 'delivered to' : 'collected from'} ${customerOf(d.bookingId)}`,
+        detail: d.signedBy ? `Signed by ${d.signedBy}` : '',
+        href: `/bookings/${refOf(d.bookingId)}`,
+      })),
+    ...[...new Map(db.bookings.map((b) => [groupIdOf(b), b])).values()].map((b) => ({
+      id: `book-${b.id}`,
+      kind: 'BOOKED' as const,
+      at: b.createdAt,
+      title: `New booking for ${db.customers.find((c) => c.id === b.customerId)?.name ?? 'Unknown customer'}`,
+      detail: groupLines(db, b.id).map((l) => l.unitId).join(', '),
+      href: `/bookings/${groupIdOf(b)}`,
+    })),
+    ...db.units.flatMap((u) =>
+      (u.maintenanceHistory ?? []).map((r) => ({ id: r.id, kind: 'SERVICE' as const, at: r.date, title: `${u.id}: ${r.description}`, detail: r.performedBy ? `by ${r.performedBy}` : '', href: `/units/${u.id}` }))
+    ),
+  ]
+    // Future-dated entries (e.g. a service logged ahead of time) aren't "recent"
+    .filter((a) => a.at.slice(0, 10) <= todayStr)
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, 6);
+
   return {
+    activity,
     units: db.units,
     deliveries: details(
       db.bookings.filter((b) => b.status === 'CONFIRMED' && (b.startDate === todayStr || b.startDate === tomorrowStr))
