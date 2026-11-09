@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function UnitsPage() {
   const units = await getUnitsWithHire();
-  const available = units.filter((u) => u.status === 'AVAILABLE').length;
+  const available = units.filter((u) => u.status === 'AVAILABLE' && !u.breakdown).length;
 
   return (
     <div className="space-y-6">

@@ -1543,12 +1543,16 @@ export async function getDashboardData() {
   const db = await readDb();
   const todayStr = today();
   const tomorrowStr = tomorrow();
-  const in7 = new Date();
-  in7.setDate(in7.getDate() + 7);
-  const in7Str = in7.toISOString().split('T')[0];
 
   const details = (list: Booking[]) =>
     list.map((b) => withDetails(db, b)).filter((b): b is BookingWithDetails => !!b);
+
+  // Every booking still waiting for delivery (late ones included), one row per booking, soonest first
+  const waiting = new Map<string, BookingWithDetails[]>();
+  for (const b of details(db.bookings.filter((b) => b.status === 'CONFIRMED').sort((a, b) => a.startDate.localeCompare(b.startDate)))) {
+    waiting.set(groupIdOf(b), [...(waiting.get(groupIdOf(b)) ?? []), b]);
+  }
+  const upcoming = [...waiting.entries()].map(([reference, lines]) => ({ reference, lines, startDate: lines[0].startDate }));
 
   return {
     units: db.units,
@@ -1556,11 +1560,8 @@ export async function getDashboardData() {
       db.bookings.filter((b) => b.status === 'CONFIRMED' && (b.startDate === todayStr || b.startDate === tomorrowStr))
     ),
     collections: details(db.bookings.filter((b) => b.status === 'ON_HIRE' && b.endDate <= tomorrowStr)),
-    upcoming: details(
-      db.bookings
-        .filter((b) => b.status === 'CONFIRMED' && b.startDate > tomorrowStr && b.startDate <= in7Str)
-        .sort((a, b) => a.startDate.localeCompare(b.startDate))
-    ),
+    upcoming: upcoming.slice(0, 8),
+    upcomingTotal: upcoming.length,
     today: todayStr,
     tomorrow: tomorrowStr,
   };

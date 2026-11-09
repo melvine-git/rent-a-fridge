@@ -7,7 +7,7 @@ import { EmptyState } from '@/components/app/empty-state';
 import { Avatar } from '@/components/app/avatar';
 import { UnitTypeIcon, UnitCode } from '@/components/app/unit-type-icon';
 import { Pill } from '@/components/ui/status-badge';
-import { UNIT_TYPE_LABELS, TONE_CLASSES } from '@/lib/domain';
+import { UNIT_TYPE_LABELS, TONE_CLASSES, unitDisplayStatus, type UnitDisplayStatus } from '@/lib/domain';
 import { formatDate, formatDayDate, formatRelativeDay, greeting } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import {
@@ -29,12 +29,15 @@ type Job = { kind: 'delivery' | 'collection'; date: string; time?: string; booki
 
 export default async function DashboardPage() {
   const [data, shell] = await Promise.all([getDashboardData(), getShellData()]);
-  const { units, deliveries, collections, upcoming, today, tomorrow } = data;
+  const { units, deliveries, collections, upcoming, upcomingTotal, today, tomorrow } = data;
 
-  const onHire = units.filter((u) => u.status === 'ON_HIRE').length;
-  const available = units.filter((u) => u.status === 'AVAILABLE').length;
-  const maintenance = units.filter((u) => u.status === 'MAINTENANCE').length;
-  const rentable = units.length - maintenance;
+  // Breakdown overrides the stored status, so a broken unit never counts as available
+  const count = (list: typeof units, s: UnitDisplayStatus) => list.filter((u) => unitDisplayStatus(u) === s).length;
+  const onHire = count(units, 'ON_HIRE');
+  const available = count(units, 'AVAILABLE');
+  const maintenance = count(units, 'MAINTENANCE');
+  const breakdown = count(units, 'BREAKDOWN');
+  const rentable = units.length - maintenance - breakdown;
   const utilisation = rentable ? Math.round((onHire / rentable) * 100) : 0;
 
   const jobs: Job[] = [
@@ -56,9 +59,7 @@ export default async function DashboardPage() {
     return {
       type,
       total: list.length,
-      available: list.filter((u) => u.status === 'AVAILABLE').length,
-      onHire: list.filter((u) => u.status === 'ON_HIRE').length,
-      maintenance: list.filter((u) => u.status === 'MAINTENANCE').length,
+      available: count(list, 'AVAILABLE'),
     };
   });
 
@@ -87,7 +88,11 @@ export default async function DashboardPage() {
           value={available}
           icon={Box}
           tone="success"
-          hint={maintenance ? `${maintenance} in maintenance` : 'No units in maintenance'}
+          hint={
+            maintenance + breakdown
+              ? [maintenance && `${maintenance} in maintenance`, breakdown && `${breakdown} broken down`].filter(Boolean).join(' · ')
+              : 'No units out of action'
+          }
           href="/units"
         />
         <KpiCard
@@ -149,14 +154,16 @@ export default async function DashboardPage() {
                     { n: onHire, c: TONE_CLASSES.info.dot },
                     { n: available, c: TONE_CLASSES.success.dot },
                     { n: maintenance, c: TONE_CLASSES.warning.dot },
+                    { n: breakdown, c: TONE_CLASSES.danger.dot },
                   ].map((s, i) => (
                     <div key={i} className={s.c} style={{ width: `${units.length ? (s.n / units.length) * 100 : 0}%` }} />
                   ))}
                 </div>
-                <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
                   <Legend dot={TONE_CLASSES.info.dot} label="On hire" value={onHire} />
                   <Legend dot={TONE_CLASSES.success.dot} label="Available" value={available} />
                   <Legend dot={TONE_CLASSES.warning.dot} label="Service" value={maintenance} />
+                  <Legend dot={TONE_CLASSES.danger.dot} label="Breakdown" value={breakdown} />
                 </div>
               </div>
               <ul className="divide-y rounded-md border">
@@ -204,8 +211,8 @@ export default async function DashboardPage() {
       {/* Upcoming */}
       <Panel
         title="Upcoming hires"
-        description="Confirmed bookings starting in the next 7 days"
-        count={upcoming.length}
+        description={upcomingTotal > upcoming.length ? `Waiting for delivery, soonest first · showing ${upcoming.length} of ${upcomingTotal}` : 'Waiting for delivery, soonest first'}
+        count={upcomingTotal}
         action={
           <Link href="/bookings" className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
             Timeline <ArrowRight className="size-3.5" />
@@ -213,43 +220,52 @@ export default async function DashboardPage() {
         }
       >
         {upcoming.length === 0 ? (
-          <EmptyState compact icon={CalendarCheck} title="No upcoming hires this week" />
+          <EmptyState compact icon={CalendarCheck} title="No hires waiting for delivery" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/40 text-left text-xs font-medium text-muted-foreground">
                   <th className="px-4 py-2.5 font-medium">Customer</th>
-                  <th className="px-4 py-2.5 font-medium">Unit</th>
+                  <th className="px-4 py-2.5 font-medium">Units</th>
                   <th className="px-4 py-2.5 font-medium">Hire period</th>
                   <th className="hidden px-4 py-2.5 font-medium md:table-cell">Delivery address</th>
                   <th className="px-4 py-2.5 text-right font-medium">Starts</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {upcoming.map((b) => (
-                  <tr key={b.id} className="group hover:bg-muted/40">
-                    <td className="px-4 py-3">
-                      <Link href={`/bookings/${b.id}`} className="flex items-center gap-3">
-                        <Avatar name={b.customer.name} size="sm" />
-                        <span className="font-medium text-foreground group-hover:underline">{b.customer.name}</span>
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="flex items-center gap-2">
-                        <UnitTypeIcon type={b.unit.unitType} />
-                        <UnitCode id={b.unit.id} />
-                      </span>
-                    </td>
-                    <td className="tabular px-4 py-3 text-muted-foreground">
-                      {formatDate(b.startDate)} – {formatDate(b.endDate)}
-                    </td>
-                    <td className="hidden max-w-[280px] truncate px-4 py-3 text-muted-foreground md:table-cell">{b.deliveryAddress}</td>
-                    <td className="px-4 py-3 text-right">
-                      <Pill tone="scheduled">{formatRelativeDay(b.startDate)}</Pill>
-                    </td>
-                  </tr>
-                ))}
+                {upcoming.map(({ reference, lines, startDate }) => {
+                  const b = lines[0];
+                  const late = startDate < today;
+                  const end = lines.map((l) => l.endDate).sort().at(-1)!;
+                  return (
+                    <tr key={reference} className="group hover:bg-muted/40">
+                      <td className="px-4 py-3">
+                        <Link href={`/bookings/${reference}`} className="flex items-center gap-3">
+                          <Avatar name={b.customer.name} size="sm" />
+                          <span className="font-medium text-foreground group-hover:underline">{b.customer.name}</span>
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          {lines.map((l) => (
+                            <span key={l.id} className="flex items-center gap-1.5">
+                              <UnitTypeIcon type={l.unit.unitType} />
+                              <UnitCode id={l.unit.id} />
+                            </span>
+                          ))}
+                        </span>
+                      </td>
+                      <td className="tabular px-4 py-3 whitespace-nowrap text-muted-foreground">
+                        {formatDate(startDate)} – {formatDate(end)}
+                      </td>
+                      <td className="hidden max-w-[280px] truncate px-4 py-3 text-muted-foreground md:table-cell">{b.deliveryAddress}</td>
+                      <td className="px-4 py-3 text-right">
+                        <Pill tone={late ? 'danger' : 'scheduled'}>{late ? `Late · was due ${formatDate(startDate)}` : formatRelativeDay(startDate)}</Pill>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

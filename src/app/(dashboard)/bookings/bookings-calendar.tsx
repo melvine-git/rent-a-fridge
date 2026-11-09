@@ -20,9 +20,9 @@ import {
   User,
   CalendarRange,
 } from 'lucide-react';
-import type { Booking, Unit, UnitStatus, UnitType, CalendarView, BookingWithDetails } from '@/types';
+import type { Booking, Unit, UnitType, CalendarView, BookingWithDetails } from '@/types';
 import { cn } from '@/lib/utils';
-import { UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, powerLabel } from '@/lib/domain';
+import { UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, powerLabel, unitDisplayStatus, type UnitDisplayStatus } from '@/lib/domain';
 import { daysBetween, formatDate, formatDateRange, formatPhone, toISODate } from '@/lib/format';
 
 interface BookingsCalendarProps {
@@ -51,7 +51,7 @@ export function BookingsCalendar({ bookings, allUnits }: BookingsCalendarProps) 
   const [anchor, setAnchor] = useState(() => mondayOf(new Date()));
   const [selected, setSelected] = useState<BookingWithDetails | null>(null);
   const [calendarView, setCalendarView] = useState<CalendarView>('week');
-  const [statusFilter, setStatusFilter] = useState<UnitStatus | 'ALL'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<UnitDisplayStatus | 'ALL'>('ALL');
   const [unitTypeFilter, setUnitTypeFilter] = useState<UnitType | 'ALL'>('ALL');
 
   const numDays = calendarView === 'month' ? 28 : 14;
@@ -70,7 +70,7 @@ export function BookingsCalendar({ bookings, allUnits }: BookingsCalendarProps) 
   const filteredUnits = useMemo(
     () =>
       allUnits
-        .filter((u) => (statusFilter === 'ALL' || u.status === statusFilter) && (unitTypeFilter === 'ALL' || u.unitType === unitTypeFilter))
+        .filter((u) => (statusFilter === 'ALL' || unitDisplayStatus(u) === statusFilter) && (unitTypeFilter === 'ALL' || u.unitType === unitTypeFilter))
         .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })),
     [allUnits, statusFilter, unitTypeFilter]
   );
@@ -84,9 +84,10 @@ export function BookingsCalendar({ bookings, allUnits }: BookingsCalendarProps) 
   const counts = useMemo(
     () => ({
       ALL: allUnits.length,
-      AVAILABLE: allUnits.filter((u) => u.status === 'AVAILABLE').length,
-      ON_HIRE: allUnits.filter((u) => u.status === 'ON_HIRE').length,
-      MAINTENANCE: allUnits.filter((u) => u.status === 'MAINTENANCE').length,
+      AVAILABLE: allUnits.filter((u) => unitDisplayStatus(u) === 'AVAILABLE').length,
+      ON_HIRE: allUnits.filter((u) => unitDisplayStatus(u) === 'ON_HIRE').length,
+      MAINTENANCE: allUnits.filter((u) => unitDisplayStatus(u) === 'MAINTENANCE').length,
+      BREAKDOWN: allUnits.filter((u) => u.breakdown).length,
     }),
     [allUnits]
   );
@@ -143,6 +144,7 @@ export function BookingsCalendar({ bookings, allUnits }: BookingsCalendarProps) 
                 { value: 'AVAILABLE', label: 'Available', count: counts.AVAILABLE },
                 { value: 'ON_HIRE', label: 'On hire', count: counts.ON_HIRE },
                 { value: 'MAINTENANCE', label: 'Service', count: counts.MAINTENANCE },
+                { value: 'BREAKDOWN', label: 'Breakdown', count: counts.BREAKDOWN },
               ]}
             />
             <SegmentedControl
@@ -229,7 +231,7 @@ export function BookingsCalendar({ bookings, allUnits }: BookingsCalendarProps) 
                       <UnitTypeIcon type={unit.unitType} />
                       <div className="min-w-0">
                         <div className="font-mono-unit text-[13px] text-foreground">{unit.id}</div>
-                        <div className="truncate text-[11px] text-muted-foreground">
+                        <div className={cn('truncate text-[11px]', unit.breakdown ? 'font-medium text-red-600' : 'text-muted-foreground')}>
                           {unit.breakdown ? 'Breakdown' : inService ? 'In service' : UNIT_SIZE_LABELS[unit.size]}
                         </div>
                       </div>
