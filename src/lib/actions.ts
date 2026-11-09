@@ -1370,6 +1370,48 @@ export interface BookingListItem {
   lines: { id: string; unitId: string; unitType: UnitType; status: BookingStatus; startDate: string; endDate: string }[];
 }
 
+/**
+ * Everything the dispatch board needs: open deliveries and collections from any overdue date up
+ * to `days` ahead, the delivery checklist each collection should recover, and recent completions.
+ */
+export async function getDispatchData(days = 7) {
+  const db = await readDbWithJobs();
+  const todayStr = today();
+  const end = new Date(`${todayStr}T00:00:00Z`);
+  end.setUTCDate(end.getUTCDate() + days - 1);
+  const endStr = end.toISOString().split('T')[0];
+  const details = (list: Booking[]) => list.map((b) => withDetails(db, b)).filter((b): b is BookingWithDetails => !!b);
+  const delivered = Object.fromEntries(
+    db.dockets.filter((d) => d.type === 'DELIVERY' && d.status === 'COMPLETED').map((d) => [d.bookingId, d.checklist])
+  );
+  const completed = db.dockets
+    .filter((d) => d.status === 'COMPLETED')
+    .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))
+    .slice(0, 8)
+    .map((d) => {
+      const booking = db.bookings.find((b) => b.id === d.bookingId);
+      return {
+        id: d.id,
+        type: d.type,
+        unitId: d.unitId,
+        customer: db.customers.find((c) => c.id === booking?.customerId)?.name ?? 'Unknown customer',
+        signedBy: d.signedBy,
+        hasSignature: !!d.signatureData,
+        completedAt: d.completedAt ?? d.scheduledDate,
+        href: `/bookings/${booking ? groupIdOf(booking) : d.bookingId}`,
+      };
+    });
+  return {
+    today: todayStr,
+    deliveries: details(db.bookings.filter((b) => b.status === 'CONFIRMED' && b.startDate <= endStr)),
+    collections: details(db.bookings.filter((b) => b.status === 'ON_HIRE' && b.endDate <= endStr)),
+    onHire: details(db.bookings.filter((b) => b.status === 'ON_HIRE')),
+    delivered,
+    completed,
+    staff: db.staff,
+  };
+}
+
 /** Every booking (one item per booking, all its units), newest delivery first. */
 export async function getBookingsList(): Promise<BookingListItem[]> {
   const db = await readDb();
