@@ -259,7 +259,8 @@ export function ContactAndPowerFields({ value, onChange }: { value: SiteDraft; o
           <Input type="tel" value={value.contactPhone} onChange={(e) => onChange({ contactPhone: e.target.value })} placeholder="e.g. 07700 900123" className="h-9" autoComplete="off" />
         </Field>
       </div>
-      <div className="grid gap-4 @md:grid-cols-2 @2xl:grid-cols-3">
+      {/* Two columns like the contact row; a third only when "Other" needs describing */}
+      <div className={cn('grid gap-4 @md:grid-cols-2', value.powerAvailable === 'OTHER' && '@2xl:grid-cols-3')}>
         <Field label="Site power" required>
           <select value={value.powerAvailable} onChange={(e) => onChange({ powerAvailable: e.target.value as PowerType })} className={selectClass}>
             {(Object.keys(POWER_LABELS) as PowerType[]).map((p) => (
@@ -269,12 +270,10 @@ export function ContactAndPowerFields({ value, onChange }: { value: SiteDraft; o
             ))}
           </select>
         </Field>
-        {value.powerAvailable === 'OTHER' ? (
+        {value.powerAvailable === 'OTHER' && (
           <Field label="Describe power supply" required>
             <Input value={value.powerOther} onChange={(e) => onChange({ powerOther: e.target.value })} placeholder="e.g. Generator, 16A blue" className="h-9" />
           </Field>
-        ) : (
-          <div className="hidden @2xl:block" />
         )}
         <Field label="Application">
           <Input value={value.application} onChange={(e) => onChange({ application: e.target.value })} placeholder="e.g. fresh produce" className="h-9" />
