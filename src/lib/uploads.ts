@@ -1,9 +1,9 @@
 import 'server-only';
-import { mkdirSync, writeFileSync, unlinkSync, existsSync, readFileSync } from 'fs';
-import { join, resolve, sep, extname } from 'path';
 import { randomUUID } from 'crypto';
+import { supabase } from './db';
 
-export const UPLOAD_ROOT = resolve(process.cwd(), 'data', 'uploads');
+const BUCKET = 'uploads';
+const URL_PREFIX = '/api/uploads/';
 export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 
 export const IMAGE_TYPES: Record<string, string> = {
@@ -17,34 +17,36 @@ const EXT_TO_TYPE: Record<string, string> = Object.fromEntries(
   Object.entries(IMAGE_TYPES).map(([type, ext]) => [ext, type])
 );
 
-/** Resolve a path under UPLOAD_ROOT, rejecting anything that escapes it. */
-export function safeUploadPath(...segments: string[]): string | null {
-  const full = resolve(UPLOAD_ROOT, ...segments);
-  return full.startsWith(UPLOAD_ROOT + sep) ? full : null;
+/** Join path segments into a storage key, rejecting anything that could escape its folder. */
+function safeKey(segments: string[]): string | null {
+  if (segments.length === 0 || segments.some((s) => !s || s === '.' || s === '..' || /[\\/]/.test(s))) return null;
+  return segments.join('/');
 }
 
-export function saveImage(folder: string[], bytes: Buffer, mimeType: string): string {
+export async function saveImage(folder: string[], bytes: Buffer, mimeType: string): Promise<string> {
   const ext = IMAGE_TYPES[mimeType];
   if (!ext) throw new Error('Unsupported image type');
-  const dir = safeUploadPath(...folder);
-  if (!dir) throw new Error('Invalid upload folder');
-  mkdirSync(dir, { recursive: true });
   const name = `${randomUUID()}${ext}`;
-  writeFileSync(join(dir, name), bytes);
-  return ['/api/uploads', ...folder.map(encodeURIComponent), name].join('/');
+  const key = safeKey([...folder, name]);
+  if (!key) throw new Error('Invalid upload folder');
+  const { error } = await supabase().storage.from(BUCKET).upload(key, bytes, { contentType: mimeType });
+  if (error) throw new Error(`Photo upload failed: ${error.message}`);
+  return URL_PREFIX + [...folder, name].map(encodeURIComponent).join('/');
 }
 
 /** Delete an image previously returned by saveImage. Ignores URLs outside the upload area. */
-export function deleteImage(url: string) {
-  const prefix = '/api/uploads/';
-  if (!url.startsWith(prefix)) return;
-  const file = safeUploadPath(...url.slice(prefix.length).split('/').map(decodeURIComponent));
-  if (file && existsSync(file)) unlinkSync(file);
+export async function deleteImage(url: string): Promise<void> {
+  if (!url.startsWith(URL_PREFIX)) return;
+  const key = safeKey(url.slice(URL_PREFIX.length).split('/').map(decodeURIComponent));
+  if (key) await supabase().storage.from(BUCKET).remove([key]);
 }
 
-export function readImage(segments: string[]): { body: Buffer; type: string } | null {
-  const file = safeUploadPath(...segments);
-  const type = file ? EXT_TO_TYPE[extname(file).toLowerCase()] : undefined;
-  if (!file || !type || !existsSync(file)) return null;
-  return { body: readFileSync(file), type };
+export async function readImage(segments: string[]): Promise<{ body: Buffer; type: string } | null> {
+  const key = safeKey(segments);
+  const ext = key?.slice(key.lastIndexOf('.')).toLowerCase();
+  const type = ext ? EXT_TO_TYPE[ext] : undefined;
+  if (!key || !type) return null;
+  const { data, error } = await supabase().storage.from(BUCKET).download(key);
+  if (error || !data) return null;
+  return { body: Buffer.from(await data.arrayBuffer()), type };
 }

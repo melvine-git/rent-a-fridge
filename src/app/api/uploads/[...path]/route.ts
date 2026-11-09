@@ -3,7 +3,7 @@ import { readImage } from '@/lib/uploads';
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
-  const file = readImage(path);
+  const file = await readImage(path);
   if (!file) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }

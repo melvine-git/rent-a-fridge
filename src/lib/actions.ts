@@ -31,6 +31,7 @@ import type {
   UnitWithHire,
   UpdateBookingInput,
   ServiceableComponent,
+  Database,
 } from '@/types';
 
 // Helper to generate IDs
@@ -60,7 +61,7 @@ function datesOverlap(
   return start1 <= end2 && end1 >= start2;
 }
 
-type Db = ReturnType<typeof readDb>;
+type Db = Database;
 
 const ACTIVE_STATUSES: BookingStatus[] = ['CONFIRMED', 'ON_HIRE'];
 
@@ -147,9 +148,9 @@ function backfillOpenJobs(db: Db): boolean {
   return changed;
 }
 
-function readDbWithJobs(): Db {
-  const db = readDb();
-  if (backfillOpenJobs(db)) writeDb(db);
+async function readDbWithJobs(): Promise<Db> {
+  const db = await readDb();
+  if (backfillOpenJobs(db)) await writeDb(db);
   return db;
 }
 
@@ -174,8 +175,8 @@ function finaliseDocket(db: Db, docket: DeliveryDocket) {
   }
 }
 
-function completeJob(type: DeliveryDocket['type'], input: MarkDeliveredInput): { success: boolean; docket?: DeliveryDocket; error?: string } {
-  const db = readDb();
+async function completeJob(type: DeliveryDocket['type'], input: MarkDeliveredInput): Promise<{ success: boolean; docket?: DeliveryDocket; error?: string }> {
+  const db = await readDb();
   const booking = db.bookings.find((b) => b.id === input.bookingId);
   if (!booking) return { success: false, error: 'Booking not found' };
   const expected: BookingStatus = type === 'DELIVERY' ? 'CONFIRMED' : 'ON_HIRE';
@@ -197,7 +198,7 @@ function completeJob(type: DeliveryDocket['type'], input: MarkDeliveredInput): {
     photoUrls: input.photoUrls,
   });
   finaliseDocket(db, docket);
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/', 'layout');
   return { success: true, docket };
 }
@@ -205,7 +206,7 @@ function completeJob(type: DeliveryDocket['type'], input: MarkDeliveredInput): {
 // ============ CUSTOMER ACTIONS ============
 
 export async function searchCustomers(query: string): Promise<Customer[]> {
-  const db = readDb();
+  const db = await readDb();
   const q = query.toLowerCase().trim();
   if (!q) return db.customers;
   return db.customers.filter(
@@ -219,7 +220,7 @@ export async function searchCustomers(query: string): Promise<Customer[]> {
 export async function getCustomerHistory(
   customerId: string
 ): Promise<Booking[]> {
-  const db = readDb();
+  const db = await readDb();
   return db.bookings
     .filter((b) => b.customerId === customerId)
     .sort((a, b) => b.startDate.localeCompare(a.startDate));
@@ -228,14 +229,14 @@ export async function getCustomerHistory(
 export async function addCustomer(
   data: Omit<Customer, 'id' | 'createdAt'>
 ): Promise<Customer> {
-  const db = readDb();
+  const db = await readDb();
   const customer: Customer = {
     id: generateId('cust'),
     ...data,
     createdAt: today(),
   };
   db.customers.push(customer);
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/');
   return customer;
 }
@@ -244,7 +245,7 @@ export async function addCustomerAddress(
   customerId: string,
   data: Omit<CustomerAddress, 'id'>
 ): Promise<{ success: boolean; address?: CustomerAddress; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   const customer = db.customers.find(c => c.id === customerId);
   if (!customer) {
     return { success: false, error: 'Customer not found' };
@@ -259,13 +260,13 @@ export async function addCustomerAddress(
     customer.addresses = [];
   }
   customer.addresses.push(address);
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/');
   return { success: true, address };
 }
 
 export async function getCustomerAddresses(customerId: string): Promise<CustomerAddress[]> {
-  const db = readDb();
+  const db = await readDb();
   const customer = db.customers.find(c => c.id === customerId);
   if (!customer) return [];
   
@@ -280,12 +281,12 @@ export async function getCustomerAddresses(customerId: string): Promise<Customer
 }
 
 export async function getCustomerById(customerId: string): Promise<Customer | null> {
-  const db = readDb();
+  const db = await readDb();
   return db.customers.find(c => c.id === customerId) || null;
 }
 
 export async function getCustomerBookings(customerId: string): Promise<(Booking & { unit: Unit })[]> {
-  const db = readDb();
+  const db = await readDb();
   return db.bookings
     .filter(b => b.customerId === customerId)
     .map(b => {
@@ -300,7 +301,7 @@ export async function updateCustomer(
   customerId: string,
   data: Partial<Omit<Customer, 'id' | 'createdAt'>>
 ): Promise<{ success: boolean; customer?: Customer; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   const index = db.customers.findIndex(c => c.id === customerId);
   
   if (index === -1) {
@@ -312,7 +313,7 @@ export async function updateCustomer(
     ...data,
   };
   
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/');
   return { success: true, customer: db.customers[index] };
 }
@@ -321,7 +322,7 @@ export async function updateCustomerPreferences(
   customerId: string,
   preferences: CustomerPreferences
 ): Promise<{ success: boolean; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   const customer = db.customers.find(c => c.id === customerId);
   
   if (!customer) {
@@ -329,7 +330,7 @@ export async function updateCustomerPreferences(
   }
   
   customer.preferences = { ...customer.preferences, ...preferences };
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/');
   return { success: true };
 }
@@ -338,7 +339,7 @@ export async function deleteCustomerAddress(
   customerId: string,
   addressId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   const customer = db.customers.find(c => c.id === customerId);
   
   if (!customer) {
@@ -350,7 +351,7 @@ export async function deleteCustomerAddress(
   }
   
   customer.addresses = customer.addresses.filter(a => a.id !== addressId);
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/');
   return { success: true };
 }
@@ -363,7 +364,7 @@ export async function getAvailableUnits(
   spec?: UnitSpec,
   ignoreBookingId?: string
 ): Promise<Unit[]> {
-  const db = readDb();
+  const db = await readDb();
 
   return db.units.filter((unit) => {
     // Units on hire are only unavailable for dates that overlap their current hire
@@ -378,7 +379,7 @@ export async function getAvailableUnits(
 }
 
 export async function getMatchingUnits(spec: UnitSpec): Promise<Unit[]> {
-  const db = readDb();
+  const db = await readDb();
   return db.units.filter((unit) => {
     if (unit.status !== 'AVAILABLE') return false;
     if (spec.size && unit.size !== spec.size) return false;
@@ -388,13 +389,13 @@ export async function getMatchingUnits(spec: UnitSpec): Promise<Unit[]> {
 }
 
 export async function getUnitsByType(unitType?: UnitType): Promise<Unit[]> {
-  const db = readDb();
+  const db = await readDb();
   if (!unitType) return db.units;
   return db.units.filter(u => u.unitType === unitType);
 }
 
 export async function getOverdueActionBookings(): Promise<(Booking & { customer: Customer; unit: Unit })[]> {
-  const db = readDb();
+  const db = await readDb();
   const todayStr = today();
   
   return db.bookings
@@ -418,7 +419,7 @@ export async function getAvailableUnitsByType(
   endDate: string,
   unitType?: UnitType
 ): Promise<Unit[]> {
-  const db = readDb();
+  const db = await readDb();
   
   return db.units.filter((unit) => {
     // Filter by unit type if specified
@@ -428,7 +429,7 @@ export async function getAvailableUnitsByType(
 }
 
 export async function getPreviousUnit(customerId: string): Promise<Unit | null> {
-  const db = readDb();
+  const db = await readDb();
   const customerBookings = db.bookings
     .filter((b) => b.customerId === customerId)
     .sort((a, b) => b.startDate.localeCompare(a.startDate));
@@ -444,7 +445,7 @@ export async function getPreviousUnit(customerId: string): Promise<Unit | null> 
 export async function createBooking(
   input: CreateBookingInput
 ): Promise<{ success: boolean; booking?: Booking; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
 
   // Server-side re-validation - cannot be bypassed
   if (!input.startDate || !input.endDate || input.endDate < input.startDate) {
@@ -476,7 +477,7 @@ export async function createBooking(
 
   db.bookings.push(booking);
   ensureScheduledDocket(db, booking, 'DELIVERY');
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/', 'layout');
 
   return { success: true, booking };
@@ -486,7 +487,7 @@ export async function updateBooking(
   bookingId: string,
   input: UpdateBookingInput
 ): Promise<{ success: boolean; booking?: Booking; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   const booking = db.bookings.find((b) => b.id === bookingId);
   if (!booking) return { success: false, error: 'Booking not found' };
   if (!ACTIVE_STATUSES.includes(booking.status)) {
@@ -519,7 +520,7 @@ export async function updateBooking(
     if (booking.what3wordsAddress) d.what3wordsAddress = booking.what3wordsAddress;
     if (d.type === 'DELIVERY') d.checklist.tempSetting = booking.tempRequired;
   }
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/', 'layout');
   return { success: true, booking };
 }
@@ -528,7 +529,7 @@ export async function cancelBooking(
   bookingId: string,
   reason?: string
 ): Promise<{ success: boolean; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   const booking = db.bookings.find((b) => b.id === bookingId);
   if (!booking) return { success: false, error: 'Booking not found' };
   if (booking.status !== 'CONFIRMED') {
@@ -540,7 +541,7 @@ export async function cancelBooking(
   booking.actionDate = undefined;
   // Drop the jobs that will no longer happen
   db.dockets = db.dockets.filter((d) => !(d.bookingId === booking.id && d.status !== 'COMPLETED'));
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/', 'layout');
   return { success: true };
 }
@@ -550,7 +551,7 @@ export async function cancelBooking(
 export async function getTomorrowsDeliveries(): Promise<
   Array<Booking & { customer: Customer; unit: Unit }>
 > {
-  const db = readDb();
+  const db = await readDb();
   const tomorrowDate = tomorrow();
 
   return db.bookings
@@ -565,7 +566,7 @@ export async function getTomorrowsDeliveries(): Promise<
 export async function getTodaysDeliveries(): Promise<
   Array<Booking & { customer: Customer; unit: Unit }>
 > {
-  const db = readDb();
+  const db = await readDb();
   const todayDate = today();
 
   return db.bookings
@@ -580,7 +581,7 @@ export async function getTodaysDeliveries(): Promise<
 export async function getCollectionsDue(): Promise<
   Array<Booking & { customer: Customer; unit: Unit }>
 > {
-  const db = readDb();
+  const db = await readDb();
   const todayDate = today();
 
   return db.bookings
@@ -607,7 +608,7 @@ export async function markCollected(
 // ============ DELIVERY MANAGEMENT ============
 
 export async function getAllDockets(): Promise<(DeliveryDocket & { booking: Booking; customer: Customer; unit: Unit; staff: Staff })[]> {
-  const db = readDbWithJobs();
+  const db = await readDbWithJobs();
   return db.dockets.map(d => {
     const booking = db.bookings.find(b => b.id === d.bookingId)!;
     const customer = db.customers.find(c => c.id === booking?.customerId)!;
@@ -618,7 +619,7 @@ export async function getAllDockets(): Promise<(DeliveryDocket & { booking: Book
 }
 
 export async function getUpcomingDeliveries(): Promise<(DeliveryDocket & { booking: Booking; customer: Customer; unit: Unit; staff: Staff })[]> {
-  const db = readDbWithJobs();
+  const db = await readDbWithJobs();
   const todayStr = today();
   
   return db.dockets
@@ -638,7 +639,7 @@ export async function updateDocketChecklist(
   docketId: string,
   checklist: Partial<DeliveryChecklist>
 ): Promise<{ success: boolean; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   const docket = db.dockets.find(d => d.id === docketId);
   
   if (!docket) {
@@ -646,7 +647,7 @@ export async function updateDocketChecklist(
   }
   
   docket.checklist = { ...docket.checklist, ...checklist };
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/');
   return { success: true };
 }
@@ -657,7 +658,7 @@ export async function completeDocket(
   signatureData?: string,
   what3wordsAddress?: string
 ): Promise<{ success: boolean; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   const docket = db.dockets.find(d => d.id === docketId);
   
   if (!docket) {
@@ -672,24 +673,24 @@ export async function completeDocket(
   docket.what3wordsAddress = what3wordsAddress || docket.what3wordsAddress;
   finaliseDocket(db, docket);
   
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/', 'layout');
   return { success: true };
 }
 
 /** Open (not yet completed) job for a booking, if one exists. */
 export async function getOpenDocket(bookingId: string, type: DeliveryDocket['type']): Promise<DeliveryDocket | null> {
-  const db = readDb();
+  const db = await readDb();
   return db.dockets.find((d) => d.bookingId === bookingId && d.type === type && d.status !== 'COMPLETED') ?? null;
 }
 
 export async function getStaff(): Promise<Staff[]> {
-  const db = readDb();
+  const db = await readDb();
   return db.staff;
 }
 
 export async function getUpcomingCollections(): Promise<(DeliveryDocket & { booking: Booking; customer: Customer; unit: Unit; staff: Staff; deliveryDocket?: DeliveryDocket })[]> {
-  const db = readDbWithJobs();
+  const db = await readDbWithJobs();
   const todayStr = today();
   
   // Get collection dockets that are scheduled
@@ -711,7 +712,7 @@ export async function getUpcomingCollections(): Promise<(DeliveryDocket & { book
 }
 
 export async function getCollectionsFromBookings(): Promise<(Booking & { customer: Customer; unit: Unit; deliveryDocket?: DeliveryDocket })[]> {
-  const db = readDb();
+  const db = await readDb();
   const todayStr = today();
   
   // Get bookings that are ON_HIRE and due for collection (endDate <= today)
@@ -728,7 +729,7 @@ export async function getCollectionsFromBookings(): Promise<(Booking & { custome
 }
 
 export async function getCompletedCollections(): Promise<(DeliveryDocket & { booking: Booking; customer: Customer; unit: Unit })[]> {
-  const db = readDb();
+  const db = await readDb();
   
   return db.dockets
     .filter(d => d.type === 'COLLECTION' && d.status === 'COMPLETED')
@@ -748,7 +749,7 @@ export async function createCollectionDocket(
   scheduledDate: string,
   scheduledTime?: string
 ): Promise<{ success: boolean; docket?: DeliveryDocket; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   const booking = db.bookings.find(b => b.id === bookingId);
   
   if (!booking) {
@@ -789,7 +790,7 @@ export async function createCollectionDocket(
   };
   
   db.dockets.push(docket);
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/');
   
   return { success: true, docket };
@@ -798,12 +799,12 @@ export async function createCollectionDocket(
 // ============ UNIT MANAGEMENT ============
 
 export async function getUnitById(unitId: string): Promise<Unit | null> {
-  const db = readDb();
+  const db = await readDb();
   return db.units.find(u => u.id === unitId) || null;
 }
 
 export async function getUnitBookingHistory(unitId: string): Promise<(Booking & { customer: Customer })[]> {
-  const db = readDb();
+  const db = await readDb();
   return db.bookings
     .filter(b => b.unitId === unitId)
     .map(b => {
@@ -818,7 +819,7 @@ export async function updateUnit(
   unitId: string,
   data: Partial<Omit<Unit, 'id'>>
 ): Promise<{ success: boolean; unit?: Unit; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   const index = db.units.findIndex(u => u.id === unitId);
   
   if (index === -1) {
@@ -826,7 +827,7 @@ export async function updateUnit(
   }
   
   db.units[index] = { ...db.units[index], ...data };
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/');
   return { success: true, unit: db.units[index] };
 }
@@ -839,7 +840,7 @@ export async function addUnit(data: {
   notes?: string;
   specifications?: UnitSpecifications;
 }): Promise<{ success: boolean; unit?: Unit; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   
   // Check if ID already exists
   if (db.units.some(u => u.id === data.id)) {
@@ -853,7 +854,7 @@ export async function addUnit(data: {
   };
   
   db.units.push(unit);
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/');
   return { success: true, unit };
 }
@@ -862,7 +863,7 @@ export async function updateUnitSpecifications(
   unitId: string,
   specifications: UnitSpecifications
 ): Promise<{ success: boolean; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   const unit = db.units.find(u => u.id === unitId);
   
   if (!unit) {
@@ -870,7 +871,7 @@ export async function updateUnitSpecifications(
   }
   
   unit.specifications = { ...unit.specifications, ...specifications };
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/');
   return { success: true };
 }
@@ -879,7 +880,7 @@ export async function addBOMComponent(
   unitId: string,
   component: Omit<BOMComponent, 'id'>
 ): Promise<{ success: boolean; component?: BOMComponent; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   const unit = db.units.find(u => u.id === unitId);
   
   if (!unit) {
@@ -895,7 +896,7 @@ export async function addBOMComponent(
     unit.bom = [];
   }
   unit.bom.push(newComponent);
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/');
   return { success: true, component: newComponent };
 }
@@ -904,7 +905,7 @@ export async function removeBOMComponent(
   unitId: string,
   componentId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   const unit = db.units.find(u => u.id === unitId);
   
   if (!unit || !unit.bom) {
@@ -912,7 +913,7 @@ export async function removeBOMComponent(
   }
   
   unit.bom = unit.bom.filter(c => c.id !== componentId);
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/');
   return { success: true };
 }
@@ -921,7 +922,7 @@ export async function addMaintenanceRecord(
   unitId: string,
   record: Omit<MaintenanceRecord, 'id'>
 ): Promise<{ success: boolean; record?: MaintenanceRecord; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   const unit = db.units.find(u => u.id === unitId);
   
   if (!unit) {
@@ -937,7 +938,7 @@ export async function addMaintenanceRecord(
     unit.maintenanceHistory = [];
   }
   unit.maintenanceHistory.unshift(newRecord);
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/');
   return { success: true, record: newRecord };
 }
@@ -946,7 +947,7 @@ export async function addUnitPhotos(
   unitId: string,
   formData: FormData
 ): Promise<{ success: boolean; photoUrls?: string[]; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   const unit = db.units.find((u) => u.id === unitId);
   if (!unit) return { success: false, error: 'Unit not found' };
 
@@ -959,21 +960,21 @@ export async function addUnitPhotos(
 
   const urls: string[] = [];
   for (const f of files) {
-    urls.push(saveImage(['units', unit.id], Buffer.from(await f.arrayBuffer()), f.type));
+    urls.push(await saveImage(['units', unit.id], Buffer.from(await f.arrayBuffer()), f.type));
   }
   unit.specifications = { ...unit.specifications, photoUrls: [...(unit.specifications?.photoUrls ?? []), ...urls] };
-  writeDb(db);
+  await writeDb(db);
   revalidatePath(`/units/${unit.id}`);
   return { success: true, photoUrls: unit.specifications.photoUrls };
 }
 
 export async function removeUnitPhoto(unitId: string, url: string): Promise<{ success: boolean; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   const unit = db.units.find((u) => u.id === unitId);
   if (!unit?.specifications?.photoUrls?.includes(url)) return { success: false, error: 'Photo not found' };
   unit.specifications.photoUrls = unit.specifications.photoUrls.filter((p) => p !== url);
-  deleteImage(url);
-  writeDb(db);
+  await deleteImage(url);
+  await writeDb(db);
   revalidatePath(`/units/${unit.id}`);
   return { success: true };
 }
@@ -990,7 +991,7 @@ const DEFAULT_SERVICEABLE_COMPONENTS: Omit<ServiceableComponent, 'id'>[] = [
 ];
 
 export async function getServiceableComponentList(): Promise<ServiceableComponent[]> {
-  const db = readDb();
+  const db = await readDb();
   return db.serviceableComponents ?? DEFAULT_SERVICEABLE_COMPONENTS.map((c, i) => ({ ...c, id: `svc-default-${i + 1}` }));
 }
 
@@ -1007,7 +1008,7 @@ export async function saveServiceableComponent(
 ): Promise<{ success: boolean; error?: string }> {
   const error = validateComponent(data);
   if (error) return { success: false, error };
-  const db = readDb();
+  const db = await readDb();
   // First edit materialises the default list so it becomes fully editable
   db.serviceableComponents ??= await getServiceableComponentList();
   const clean = { type: data.type, name: data.name.trim(), description: data.description?.trim() || undefined, intervalMonths: data.intervalMonths };
@@ -1015,18 +1016,18 @@ export async function saveServiceableComponent(
   if (data.id && !existing) return { success: false, error: 'Component not found' };
   if (existing) Object.assign(existing, clean);
   else db.serviceableComponents.push({ id: generateId('svc'), ...clean });
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/maintenance');
   return { success: true };
 }
 
 export async function removeServiceableComponent(id: string): Promise<{ success: boolean; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   db.serviceableComponents ??= await getServiceableComponentList();
   const before = db.serviceableComponents.length;
   db.serviceableComponents = db.serviceableComponents.filter((c) => c.id !== id);
   if (db.serviceableComponents.length === before) return { success: false, error: 'Component not found' };
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/maintenance');
   return { success: true };
 }
@@ -1035,7 +1036,7 @@ export async function setUnitStatus(
   unitId: string,
   status: UnitStatus
 ): Promise<{ success: boolean; error?: string }> {
-  const db = readDb();
+  const db = await readDb();
   const unit = db.units.find(u => u.id === unitId);
   
   if (!unit) {
@@ -1046,7 +1047,7 @@ export async function setUnitStatus(
   if (status !== 'ON_HIRE') {
     unit.currentBookingId = undefined;
   }
-  writeDb(db);
+  await writeDb(db);
   revalidatePath('/');
   return { success: true };
 }
@@ -1054,7 +1055,7 @@ export async function setUnitStatus(
 // ============ MAINTENANCE MANAGEMENT ============
 
 export async function getAllMaintenanceRecords(): Promise<(MaintenanceRecord & { unit: Unit })[]> {
-  const db = readDb();
+  const db = await readDb();
   const records: (MaintenanceRecord & { unit: Unit })[] = [];
   
   db.units.forEach(unit => {
@@ -1069,7 +1070,7 @@ export async function getAllMaintenanceRecords(): Promise<(MaintenanceRecord & {
 }
 
 export async function getMaintenanceDueNotifications(): Promise<{ unit: Unit; record: MaintenanceRecord; daysOverdue: number }[]> {
-  const db = readDb();
+  const db = await readDb();
   const todayStr = today();
   const notifications: { unit: Unit; record: MaintenanceRecord; daysOverdue: number }[] = [];
   
@@ -1090,12 +1091,12 @@ export async function getMaintenanceDueNotifications(): Promise<{ unit: Unit; re
 }
 
 export async function getUnitsInMaintenance(): Promise<Unit[]> {
-  const db = readDb();
+  const db = await readDb();
   return db.units.filter(u => u.status === 'MAINTENANCE');
 }
 
 export async function getAllBOMComponents(): Promise<(BOMComponent & { unit: Unit })[]> {
-  const db = readDb();
+  const db = await readDb();
   const components: (BOMComponent & { unit: Unit })[] = [];
   
   db.units.forEach(unit => {
@@ -1110,7 +1111,7 @@ export async function getAllBOMComponents(): Promise<(BOMComponent & { unit: Uni
 }
 
 export async function getServiceableComponents(): Promise<{ type: BOMComponent['type']; count: number; units: string[] }[]> {
-  const db = readDb();
+  const db = await readDb();
   const componentMap = new Map<BOMComponent['type'], Set<string>>();
   
   db.units.forEach(unit => {
@@ -1132,7 +1133,7 @@ export async function getServiceableComponents(): Promise<{ type: BOMComponent['
 }
 
 export async function getAllUnits(): Promise<Unit[]> {
-  const db = readDb();
+  const db = await readDb();
   return db.units;
 }
 
@@ -1141,7 +1142,7 @@ export async function getAllUnits(): Promise<Unit[]> {
 export async function bookingsForCalendar(): Promise<
   Array<Booking & { customer: Customer; unit: Unit }>
 > {
-  const db = readDb();
+  const db = await readDb();
   return db.bookings
     .filter((b) => b.status === 'CONFIRMED' || b.status === 'ON_HIRE')
     .map((b) => ({
@@ -1160,7 +1161,7 @@ export async function tomorrowDeliveries(): Promise<
 export async function activeHires(): Promise<
   Array<Booking & { customer: Customer; unit: Unit }>
 > {
-  const db = readDb();
+  const db = await readDb();
   return db.bookings
     .filter((b) => b.status === 'ON_HIRE')
     .map((b) => ({
@@ -1173,41 +1174,41 @@ export async function activeHires(): Promise<
 export async function unitsWithStatus(
   status?: UnitStatus
 ): Promise<Unit[]> {
-  const db = readDb();
+  const db = await readDb();
   if (!status) return db.units;
   return db.units.filter((u) => u.status === status);
 }
 
 export async function getAllStaff() {
-  const db = readDb();
+  const db = await readDb();
   return db.staff;
 }
 
 export async function getUnit(unitId: string): Promise<Unit | null> {
-  const db = readDb();
+  const db = await readDb();
   return db.units.find((u) => u.id === unitId) || null;
 }
 
 export async function getBooking(bookingId: string): Promise<Booking | null> {
-  const db = readDb();
+  const db = await readDb();
   return db.bookings.find((b) => b.id === bookingId) || null;
 }
 
 export async function getCustomer(customerId: string): Promise<Customer | null> {
-  const db = readDb();
+  const db = await readDb();
   return db.customers.find((c) => c.id === customerId) || null;
 }
 
 // ============ UI VIEW MODELS ============
 
-function withDetails(db: ReturnType<typeof readDb>, b: Booking): BookingWithDetails | null {
+function withDetails(db: Database, b: Booking): BookingWithDetails | null {
   const customer = db.customers.find((c) => c.id === b.customerId);
   const unit = db.units.find((u) => u.id === b.unitId);
   return customer && unit ? { ...b, customer, unit } : null;
 }
 
 export async function getShellData(): Promise<ShellData> {
-  const db = readDb();
+  const db = await readDb();
   const todayStr = today();
   const notifications: AppNotification[] = [];
 
@@ -1292,7 +1293,7 @@ export async function getShellData(): Promise<ShellData> {
 }
 
 export async function getDashboardData() {
-  const db = readDb();
+  const db = await readDb();
   const todayStr = today();
   const tomorrowStr = tomorrow();
   const in7 = new Date();
@@ -1319,7 +1320,7 @@ export async function getDashboardData() {
 }
 
 export async function getBookingDetail(id: string) {
-  const db = readDb();
+  const db = await readDb();
   const booking = db.bookings.find((b) => b.id === id);
   if (!booking) return null;
   const detailed = withDetails(db, booking);
@@ -1339,7 +1340,7 @@ export async function getBookingDetail(id: string) {
 }
 
 export async function getCustomerDetail(id: string) {
-  const db = readDb();
+  const db = await readDb();
   const customer = db.customers.find((c) => c.id === id);
   if (!customer) return null;
   const bookings = db.bookings
@@ -1354,7 +1355,7 @@ export async function getCustomerDetail(id: string) {
 }
 
 export async function getUnitDetail(id: string) {
-  const db = readDb();
+  const db = await readDb();
   const unit = db.units.find((u) => u.id === id);
   if (!unit) return null;
   const bookingHistory = db.bookings
@@ -1367,7 +1368,7 @@ export async function getUnitDetail(id: string) {
 }
 
 export async function getCustomersWithStats(): Promise<CustomerWithStats[]> {
-  const db = readDb();
+  const db = await readDb();
   return db.customers
     .map((c) => {
       const bookings = db.bookings.filter((b) => b.customerId === c.id);
@@ -1382,7 +1383,7 @@ export async function getCustomersWithStats(): Promise<CustomerWithStats[]> {
 }
 
 export async function getUnitsWithHire(): Promise<UnitWithHire[]> {
-  const db = readDb();
+  const db = await readDb();
   const todayStr = today();
   const name = (id: string) => db.customers.find((c) => c.id === id)?.name ?? 'Unknown';
   return db.units

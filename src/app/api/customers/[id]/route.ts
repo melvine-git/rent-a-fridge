@@ -6,7 +6,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const db = readDb();
+  const db = await readDb();
   
   const customer = db.customers.find(c => c.id === id);
   if (!customer) {
