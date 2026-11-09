@@ -1,10 +1,11 @@
-import type { BOMComponent, BookingStatus, MaintenanceRecord, PowerType, UnitSize, UnitStatus, UnitType } from '@/types';
+import type { BOMComponent, Booking, BookingQuote, BookingStatus, MaintenanceRecord, PowerType, RatePeriod, Unit, UnitSize, UnitStatus, UnitType } from '@/types';
 
 export const COMPONENT_LABELS: Record<BOMComponent['type'], string> = {
   COMPRESSOR: 'Compressor',
   EVAPORATOR: 'Evaporator',
   CONTROLLER: 'Controller',
   FAN_MOTOR: 'Fan motor',
+  CONTACTOR: 'Contactor',
   OTHER: 'Other',
 };
 
@@ -30,16 +31,74 @@ export const UNIT_SIZE_LABELS: Record<UnitSize, string> = {
 
 export const POWER_LABELS: Record<PowerType, string> = {
   STANDARD: '13A standard',
-  INDUSTRIAL: '32A industrial',
+  INDUSTRIAL: 'Commando',
+  OTHER: 'Other',
 };
+
+/** Full power description for a booking, using the free text for OTHER. */
+export function powerLabel(b: Pick<Booking, 'powerAvailable' | 'powerOther'>): string {
+  return b.powerAvailable === 'OTHER' ? (b.powerOther?.trim() ? `Other: ${b.powerOther.trim()}` : 'Other') : POWER_LABELS[b.powerAvailable];
+}
+
+/** Compact power tag for cards: 13A, Commando or the free text. */
+export function powerShort(b: Pick<Booking, 'powerAvailable' | 'powerOther'>): string {
+  return b.powerAvailable === 'STANDARD' ? '13A' : b.powerAvailable === 'INDUSTRIAL' ? 'Commando' : b.powerOther?.trim() || 'Other power';
+}
+
+export const RATE_PERIOD_LABELS: Record<RatePeriod, string> = { DAY: 'per day', WEEK: 'per week' };
+
+/** Hire days are inclusive of delivery and collection day; weekly rates charge whole weeks. */
+export function lineCharge(b: Pick<Booking, 'startDate' | 'endDate' | 'rate' | 'ratePeriod'>): { qty: number; unit: string; amount: number } {
+  const days = Math.max(1, Math.round((Date.parse(b.endDate) - Date.parse(b.startDate)) / 86_400_000) + 1);
+  const weekly = b.ratePeriod === 'WEEK';
+  const qty = weekly ? Math.ceil(days / 7) : days;
+  return { qty, unit: weekly ? (qty === 1 ? 'week' : 'weeks') : qty === 1 ? 'day' : 'days', amount: round2(qty * (b.rate ?? 0)) };
+}
+
+export function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+export const DEFAULT_VAT_RATE = 20;
+
+/** Totals for a booking: unit hire lines (from each line's rate) plus the shared quote extras. */
+export function quoteTotals(lines: Pick<Booking, 'startDate' | 'endDate' | 'rate' | 'ratePeriod' | 'status'>[], quote?: BookingQuote) {
+  const hire = round2(lines.filter((l) => l.status !== 'CANCELLED').reduce((sum, l) => sum + lineCharge(l).amount, 0));
+  const extras = round2((quote?.extras ?? []).reduce((sum, e) => sum + e.quantity * e.unitPrice, 0));
+  const discount = round2(Math.min(quote?.discount ?? 0, hire + extras));
+  const net = round2(hire + extras - discount);
+  const vatRate = quote?.vatRate ?? DEFAULT_VAT_RATE;
+  const vat = round2((net * vatRate) / 100);
+  return { hire, extras, discount, net, vatRate, vat, total: round2(net + vat) };
+}
+
+export type UnitDisplayStatus = UnitStatus | 'BREAKDOWN';
+
+/** Breakdown overrides the stored status for display, so a broken unit on hire still stands out. */
+export function unitDisplayStatus(u: Pick<Unit, 'status' | 'breakdown'>): UnitDisplayStatus {
+  return u.breakdown ? 'BREAKDOWN' : u.status;
+}
+
+/** Next service due: a manually scheduled date wins over the last service record's. */
+export function nextServiceDate(u: Pick<Unit, 'nextServiceDate' | 'maintenanceHistory'>): string | undefined {
+  return (
+    u.nextServiceDate ??
+    (u.maintenanceHistory ?? [])
+      .map((r) => r.nextServiceDate)
+      .filter((d): d is string => !!d)
+      .sort()
+      .at(-1)
+  );
+}
 
 export type Tone = 'success' | 'info' | 'scheduled' | 'warning' | 'danger' | 'neutral';
 
 /** Single source of truth for status semantics across badges, timeline bars and charts. */
-export const STATUS_META: Record<UnitStatus | BookingStatus, { label: string; tone: Tone }> = {
+export const STATUS_META: Record<UnitDisplayStatus | BookingStatus, { label: string; tone: Tone }> = {
   AVAILABLE: { label: 'Available', tone: 'success' },
   ON_HIRE: { label: 'On hire', tone: 'info' },
   MAINTENANCE: { label: 'Maintenance', tone: 'warning' },
+  BREAKDOWN: { label: 'Breakdown', tone: 'danger' },
   CONFIRMED: { label: 'Scheduled', tone: 'scheduled' },
   COLLECTED: { label: 'Completed', tone: 'neutral' },
   CANCELLED: { label: 'Cancelled', tone: 'danger' },

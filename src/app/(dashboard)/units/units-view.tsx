@@ -11,13 +11,13 @@ import { SegmentedControl } from '@/components/app/segmented-control';
 import { EmptyState } from '@/components/app/empty-state';
 import { Field, selectClass, textareaClass } from '@/components/app/field';
 import { UnitTypeIcon, UNIT_TYPE_ICON } from '@/components/app/unit-type-icon';
-import { Plus, Search, LayoutGrid, List, PackageSearch, ChevronRight, Zap, Ruler } from 'lucide-react';
+import { Plus, Search, LayoutGrid, List, PackageSearch, ChevronRight, Ruler, TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { addUnit } from '@/lib/actions';
 import { cn } from '@/lib/utils';
-import { POWER_LABELS, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS } from '@/lib/domain';
+import { UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, unitDisplayStatus, type UnitDisplayStatus } from '@/lib/domain';
 import { daysFromToday, formatDate } from '@/lib/format';
-import type { UnitStatus, UnitType, UnitSize, PowerType, UnitWithHire } from '@/types';
+import type { UnitType, UnitSize, UnitWithHire } from '@/types';
 
 interface UnitsViewProps {
   units: UnitWithHire[];
@@ -25,7 +25,7 @@ interface UnitsViewProps {
 
 export function UnitsView({ units }: UnitsViewProps) {
   const router = useRouter();
-  const [statusFilter, setStatusFilter] = useState<'all' | UnitStatus>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | UnitDisplayStatus>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | UnitType>('all');
   const [query, setQuery] = useState('');
   const [layout, setLayout] = useState<'table' | 'grid'>('table');
@@ -33,7 +33,6 @@ export function UnitsView({ units }: UnitsViewProps) {
   const [newUnit, setNewUnit] = useState({
     id: '',
     size: 'MEDIUM' as UnitSize,
-    powerType: 'STANDARD' as PowerType,
     unitType: 'COLD_STORE' as UnitType,
     notes: '',
   });
@@ -42,7 +41,7 @@ export function UnitsView({ units }: UnitsViewProps) {
     const q = query.trim().toLowerCase();
     return units.filter(
       (u) =>
-        (statusFilter === 'all' || u.status === statusFilter) &&
+        (statusFilter === 'all' || unitDisplayStatus(u) === statusFilter) &&
         (typeFilter === 'all' || u.unitType === typeFilter) &&
         (!q || u.id.toLowerCase().includes(q) || u.currentHire?.customerName.toLowerCase().includes(q) || u.notes?.toLowerCase().includes(q))
     );
@@ -50,9 +49,10 @@ export function UnitsView({ units }: UnitsViewProps) {
 
   const counts = {
     all: units.length,
-    AVAILABLE: units.filter((u) => u.status === 'AVAILABLE').length,
-    ON_HIRE: units.filter((u) => u.status === 'ON_HIRE').length,
-    MAINTENANCE: units.filter((u) => u.status === 'MAINTENANCE').length,
+    AVAILABLE: units.filter((u) => unitDisplayStatus(u) === 'AVAILABLE').length,
+    ON_HIRE: units.filter((u) => unitDisplayStatus(u) === 'ON_HIRE').length,
+    MAINTENANCE: units.filter((u) => unitDisplayStatus(u) === 'MAINTENANCE').length,
+    BREAKDOWN: units.filter((u) => u.breakdown).length,
   };
 
   const handleAddUnit = async () => {
@@ -64,7 +64,7 @@ export function UnitsView({ units }: UnitsViewProps) {
     if (result.success) {
       toast.success(`Unit ${newUnit.id} added to fleet`);
       setShowAddUnit(false);
-      setNewUnit({ id: '', size: 'MEDIUM', powerType: 'STANDARD', unitType: 'COLD_STORE', notes: '' });
+      setNewUnit({ id: '', size: 'MEDIUM', unitType: 'COLD_STORE', notes: '' });
       router.refresh();
     } else {
       toast.error(result.error || 'Failed to add unit');
@@ -91,6 +91,7 @@ export function UnitsView({ units }: UnitsViewProps) {
                 { value: 'AVAILABLE', label: 'Available', count: counts.AVAILABLE },
                 { value: 'ON_HIRE', label: 'On hire', count: counts.ON_HIRE },
                 { value: 'MAINTENANCE', label: 'Maintenance', count: counts.MAINTENANCE },
+                { value: 'BREAKDOWN', label: 'Breakdown', count: counts.BREAKDOWN },
               ]}
             />
             <select
@@ -152,10 +153,11 @@ export function UnitsView({ units }: UnitsViewProps) {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <StatusBadge status={u.status} />
+                      <StatusBadge status={unitDisplayStatus(u)} />
                     </td>
                     <td className="hidden px-4 py-3 whitespace-nowrap text-muted-foreground md:table-cell">
-                      {UNIT_SIZE_LABELS[u.size]} <span className="text-muted-foreground/40">·</span> {POWER_LABELS[u.powerType]}
+                      {UNIT_SIZE_LABELS[u.size]}
+                      {u.specifications?.cubicCapacity ? <span className="text-muted-foreground/70"> · {u.specifications.cubicCapacity} m³</span> : null}
                     </td>
                     <td className="px-4 py-3">
                       <HireSummary unit={u} />
@@ -189,14 +191,14 @@ export function UnitsView({ units }: UnitsViewProps) {
                         <div className="text-xs text-muted-foreground">{UNIT_TYPE_LABELS[u.unitType]}</div>
                       </div>
                     </div>
-                    <StatusBadge status={u.status} />
+                    <StatusBadge status={unitDisplayStatus(u)} />
                   </div>
                   <div className="grid grid-cols-2 divide-x border-y text-xs">
                     <div className="flex items-center gap-1.5 px-4 py-2 text-muted-foreground">
                       <Ruler className="size-3.5" /> {UNIT_SIZE_LABELS[u.size]}
                     </div>
                     <div className="flex items-center gap-1.5 px-4 py-2 text-muted-foreground">
-                      <Zap className="size-3.5" /> {POWER_LABELS[u.powerType]}
+                      {u.specifications?.cubicCapacity ? `${u.specifications.cubicCapacity} m³` : 'Capacity not set'}
                     </div>
                   </div>
                   <div className="flex-1 p-4">
@@ -237,21 +239,12 @@ export function UnitsView({ units }: UnitsViewProps) {
                 ))}
               </select>
             </Field>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3">
               <Field label="Size">
                 <select value={newUnit.size} onChange={(e) => setNewUnit((p) => ({ ...p, size: e.target.value as UnitSize }))} className={selectClass}>
                   {(Object.keys(UNIT_SIZE_LABELS) as UnitSize[]).map((s) => (
                     <option key={s} value={s}>
                       {UNIT_SIZE_LABELS[s]}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Power">
-                <select value={newUnit.powerType} onChange={(e) => setNewUnit((p) => ({ ...p, powerType: e.target.value as PowerType }))} className={selectClass}>
-                  {(Object.keys(POWER_LABELS) as PowerType[]).map((p) => (
-                    <option key={p} value={p}>
-                      {POWER_LABELS[p]}
                     </option>
                   ))}
                 </select>
@@ -292,6 +285,12 @@ function HireSummary({ unit }: { unit: UnitWithHire }) {
       </div>
     );
   }
+  if (unit.breakdown)
+    return (
+      <span className="flex items-center gap-1 text-xs font-medium text-red-600">
+        <TriangleAlert className="size-3.5" /> {unit.breakdown.notes || 'Broken down'}
+      </span>
+    );
   if (unit.status === 'MAINTENANCE') return <span className="text-xs text-muted-foreground">Unavailable while in service</span>;
   if (unit.nextBooking) {
     return (

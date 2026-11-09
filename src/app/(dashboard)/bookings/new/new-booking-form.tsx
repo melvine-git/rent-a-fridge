@@ -9,12 +9,28 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { SegmentedControl } from '@/components/app/segmented-control';
 import { Field, selectClass, textareaClass } from '@/components/app/field';
 import { UNIT_TYPE_ICON } from '@/components/app/unit-type-icon';
-import { createBooking, getAvailableUnits, addCustomer, getCustomerAddresses, addCustomerAddress } from '@/lib/actions';
-import { POWER_LABELS, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS } from '@/lib/domain';
-import { daysBetween, formatDate, isValidW3w, normalizeW3w } from '@/lib/format';
+import { CustomerFields, customerDraftError, draftToCustomer, emptyCustomerDraft } from '@/components/customers/customer-fields';
+import {
+  ContactAndPowerFields,
+  LinesEditor,
+  QuoteEditor,
+  QuoteTotals,
+  emptyQuote,
+  lineError,
+  lineToInput,
+  newLine,
+  quoteToInput,
+  siteError,
+  type LineDraft,
+  type QuoteDraft,
+  type SiteDraft,
+} from '@/components/bookings/booking-editors';
+import { createBooking, getAvailableUnits, addCustomer, getCustomerAddresses, addCustomerAddress, checkBookingLines } from '@/lib/actions';
+import { UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, powerShort, quoteTotals } from '@/lib/domain';
+import { formatDate, isValidW3w, normalizeW3w } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Check, Circle, Loader2, Plus, CalendarRange } from 'lucide-react';
-import type { Customer, Unit, UnitType, CableLength, BookingAccessories, CustomerAddress, PowerType } from '@/types';
+import type { Customer, Unit, UnitType, CustomerAddress } from '@/types';
 
 interface NewBookingFormProps {
   customers: Customer[];
@@ -22,37 +38,12 @@ interface NewBookingFormProps {
   initialCustomerId?: string;
 }
 
-interface FormData {
-  customerId: string;
-  unitId: string;
+interface Defaults {
   startDate: string;
   endDate: string;
   deliveryTime: string;
   collectionTime: string;
-  actionDate: string;
-  actionDescription: string;
-  contactName: string;
-  contactPhone: string;
-  deliveryAddress: string;
-  deliveryAddressId: string;
-  what3wordsAddress: string;
-  accessInstructions: string;
-  tempRequired: string;
-  powerAvailable: PowerType;
-  cableLength: CableLength;
-  accessories: BookingAccessories;
-  application: string;
-  notes: string;
 }
-
-const CABLE_LENGTHS: CableLength[] = ['5m', '10m', '15m', '20m', '25m', '30m'];
-
-const ACCESSORIES: { key: keyof BookingAccessories; label: string; hint: string }[] = [
-  { key: 'hitchLock', label: 'Hitch lock', hint: 'Trailer security' },
-  { key: 'wheelClamp', label: 'Wheel clamp', hint: 'Prevents movement' },
-  { key: 'doorLock', label: 'Door lock', hint: 'Padlock on doors' },
-  { key: 'tempRecorder', label: 'Temperature recorder', hint: 'Logs temperatures' },
-];
 
 export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBookingFormProps) {
   const router = useRouter();
@@ -66,52 +57,46 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
 
   const [showNewCustomerDialog, setShowNewCustomerDialog] = useState(false);
   const [showNewAddressDialog, setShowNewAddressDialog] = useState(false);
-  const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '', address: '' });
+  const [newCustomer, setNewCustomer] = useState(emptyCustomerDraft);
+  const [isAddingCustomer, setIsAddingCustomer] = useState(false);
   const [newAddress, setNewAddress] = useState({ label: '', address: '' });
 
-  const [formData, setFormData] = useState<FormData>(() => {
-    const prefs = initialCustomer?.preferences;
-    return {
-      customerId: initialCustomer?.id ?? '',
-      unitId: '',
-      startDate: '',
-      endDate: '',
-      deliveryTime: '',
-      collectionTime: '',
-      actionDate: '',
-      actionDescription: '',
-      contactName: initialCustomer?.name ?? '',
-      contactPhone: initialCustomer?.phone ?? '',
-      deliveryAddress: initialCustomer?.address ?? '',
-      deliveryAddressId: '',
-      what3wordsAddress: '',
-      accessInstructions: '',
-      tempRequired: prefs?.defaultTempRequired !== undefined ? String(prefs.defaultTempRequired) : '4',
-      powerAvailable: 'STANDARD',
-      cableLength: prefs?.preferredCableLength ?? '10m',
-      accessories: { hitchLock: false, wheelClamp: false, doorLock: false, tempRecorder: false },
-      application: '',
-      notes: '',
-    };
+  const [customerId, setCustomerId] = useState(initialCustomer?.id ?? '');
+  const [defaults, setDefaults] = useState<Defaults>({ startDate: '', endDate: '', deliveryTime: '', collectionTime: '' });
+  const [lines, setLines] = useState<LineDraft[]>([]);
+  const [conflicts, setConflicts] = useState<Record<string, string | null>>({});
+  // Site contact is deliberately blank: it's usually a person on site, not the hirer
+  const [site, setSite] = useState<SiteDraft>({
+    contactName: '',
+    contactPhone: '',
+    deliveryAddress: initialCustomer?.address ?? '',
+    what3wordsAddress: '',
+    accessInstructions: '',
+    powerAvailable: 'STANDARD',
+    powerOther: '',
+    application: '',
   });
+  const [deliveryAddressId, setDeliveryAddressId] = useState('');
+  const [followUp, setFollowUp] = useState({ actionDate: '', actionDescription: '', notes: '' });
+  const [quote, setQuote] = useState<QuoteDraft>(emptyQuote);
+
+  const selectedCustomer = customerList.find((c) => c.id === customerId);
+  const prefs = selectedCustomer?.preferences;
 
   useEffect(() => {
     if (initialCustomerId) getCustomerAddresses(initialCustomerId).then(setCustomerAddresses);
   }, [initialCustomerId]);
 
-  const updateField = useCallback(<K extends keyof FormData>(field: K, value: FormData[K]) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  }, []);
+  const datesValid = !!defaults.startDate && !!defaults.endDate && defaults.endDate >= defaults.startDate;
 
-  const datesValid = !!formData.startDate && !!formData.endDate && formData.endDate >= formData.startDate;
-
+  // Picker availability uses the booking's default dates
   useEffect(() => {
     if (!datesValid) return;
     let cancelled = false;
     async function check() {
       setIsCheckingAvailability(true);
       try {
-        const available = await getAvailableUnits(formData.startDate, formData.endDate);
+        const available = await getAvailableUnits(defaults.startDate, defaults.endDate);
         if (!cancelled) setAvailableUnitIds(new Set(available.map((u) => u.id)));
       } finally {
         if (!cancelled) setIsCheckingAvailability(false);
@@ -121,57 +106,91 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
     return () => {
       cancelled = true;
     };
-  }, [formData.startDate, formData.endDate, datesValid]);
+  }, [defaults.startDate, defaults.endDate, datesValid]);
 
-  const selectCustomer = (customerId: string, list = customerList) => {
-    const customer = list.find((c) => c.id === customerId);
-    setCustomerAddresses([]);
-    if (!customer) {
-      updateField('customerId', '');
+  // Each line can have its own dates, so check every line against the fleet
+  const linesKey = JSON.stringify(lines.map((l) => [l.key, l.unitId, l.startDate, l.endDate]));
+  useEffect(() => {
+    const ready = lines.filter((l) => l.startDate && l.endDate);
+    if (ready.length === 0) return;
+    let cancelled = false;
+    checkBookingLines(ready.map(lineToInput)).then((res) => {
+      if (!cancelled) setConflicts(Object.fromEntries(ready.map((l, i) => [l.key, res[i]])));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- linesKey captures the fields that matter
+  }, [linesKey]);
+
+  const setDefault = <K extends keyof Defaults>(k: K, v: string) => {
+    const previous = defaults[k];
+    setDefaults((d) => ({ ...d, [k]: v }));
+    // Lines that still follow the booking's dates move with them
+    setLines((ls) => ls.map((l) => (l[k] === previous ? { ...l, [k]: v } : l)));
+  };
+
+  const updateLine = useCallback((key: string, patch: Partial<LineDraft>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l))), []);
+  const removeLine = useCallback((key: string) => setLines((ls) => ls.filter((l) => l.key !== key)), []);
+
+  const toggleUnit = (unit: Unit) => {
+    if (lines.some((l) => l.unitId === unit.id)) {
+      setLines((ls) => ls.filter((l) => l.unitId !== unit.id));
       return;
     }
-    const prefs = customer.preferences;
-    setFormData((prev) => ({
-      ...prev,
-      customerId,
-      contactName: customer.name,
-      contactPhone: customer.phone,
-      deliveryAddress: customer.address,
-      deliveryAddressId: '',
-      tempRequired: prefs?.defaultTempRequired !== undefined ? String(prefs.defaultTempRequired) : prev.tempRequired,
-      cableLength: prefs?.preferredCableLength ?? prev.cableLength,
-    }));
-    if (prefs?.preferredUnitType) setUnitTypeFilter(prefs.preferredUnitType);
-    getCustomerAddresses(customerId).then(setCustomerAddresses);
+    setLines((ls) => [
+      ...ls,
+      newLine(unit, {
+        ...defaults,
+        tempRequired: prefs?.defaultTempRequired !== undefined ? String(prefs.defaultTempRequired) : undefined,
+        cableLength: prefs?.preferredCableLength,
+      }),
+    ]);
+  };
+
+  const selectCustomer = (id: string, list = customerList) => {
+    const customer = list.find((c) => c.id === id);
+    setCustomerAddresses([]);
+    setDeliveryAddressId('');
+    setCustomerId(customer?.id ?? '');
+    if (!customer) return;
+    setSite((s) => ({ ...s, deliveryAddress: customer.address }));
+    if (customer.preferences?.preferredUnitType) setUnitTypeFilter(customer.preferences.preferredUnitType);
+    getCustomerAddresses(customer.id).then(setCustomerAddresses);
   };
 
   const handleAddCustomer = async () => {
-    if (!newCustomer.name || !newCustomer.phone || !newCustomer.address) {
-      toast.error('Please fill in all required fields');
+    const error = customerDraftError(newCustomer);
+    if (error) {
+      toast.error(error);
       return;
     }
+    setIsAddingCustomer(true);
     try {
-      const customer = await addCustomer(newCustomer);
+      const customer = await addCustomer(draftToCustomer(newCustomer));
       const list = [...customerList, customer];
       setCustomerList(list);
       selectCustomer(customer.id, list);
       setShowNewCustomerDialog(false);
-      setNewCustomer({ name: '', phone: '', email: '', address: '' });
+      setNewCustomer(emptyCustomerDraft());
       toast.success(`${customer.name} added`);
     } catch {
-      toast.error('Failed to add customer');
+      toast.error('Failed to add customer', { description: 'Please try again' });
+    } finally {
+      setIsAddingCustomer(false);
     }
   };
 
   const handleAddAddress = async () => {
-    if (!newAddress.label || !newAddress.address || !formData.customerId) {
+    if (!newAddress.label || !newAddress.address || !customerId) {
       toast.error('Please fill in all required fields');
       return;
     }
-    const result = await addCustomerAddress(formData.customerId, newAddress);
+    const result = await addCustomerAddress(customerId, newAddress);
     if (result.success && result.address) {
       setCustomerAddresses((prev) => [...prev, result.address!]);
-      setFormData((prev) => ({ ...prev, deliveryAddressId: result.address!.id, deliveryAddress: result.address!.address }));
+      setDeliveryAddressId(result.address.id);
+      setSite((s) => ({ ...s, deliveryAddress: result.address!.address }));
       setShowNewAddressDialog(false);
       setNewAddress({ label: '', address: '' });
       toast.success('Address saved');
@@ -182,16 +201,15 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
 
   const handleAddressSelect = (addressId: string) => {
     const addr = customerAddresses.find((a) => a.id === addressId);
-    setFormData((prev) => ({ ...prev, deliveryAddressId: addressId, deliveryAddress: addr?.address ?? prev.deliveryAddress }));
+    setDeliveryAddressId(addressId);
+    setSite((s) => ({ ...s, deliveryAddress: addr?.address ?? selectedCustomer?.address ?? s.deliveryAddress }));
   };
 
-  const toggleAccessory = (key: keyof BookingAccessories) =>
-    setFormData((prev) => ({ ...prev, accessories: { ...prev.accessories, [key]: !prev.accessories[key] } }));
-
-  const getUnitAvailability = (unit: Unit): { disabled: boolean; label: string } => {
+  const unitState = (unit: Unit): { disabled: boolean; label: string } => {
+    if (unit.breakdown) return { disabled: true, label: 'Breakdown' };
     if (unit.status === 'MAINTENANCE') return { disabled: true, label: 'In service' };
     if (!datesValid) return { disabled: false, label: unit.status === 'ON_HIRE' ? 'On hire now' : 'Available' };
-    if (!availableUnitIds.has(unit.id)) return { disabled: true, label: 'Booked' };
+    if (!availableUnitIds.has(unit.id)) return { disabled: !lines.some((l) => l.unitId === unit.id), label: 'Booked' };
     return { disabled: false, label: 'Available' };
   };
 
@@ -199,18 +217,19 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
     .filter((u) => unitTypeFilter === 'ALL' || u.unitType === unitTypeFilter)
     .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
 
-  const w3wInvalid = formData.what3wordsAddress.trim() !== '' && !isValidW3w(formData.what3wordsAddress);
-  const selectedCustomer = customerList.find((c) => c.id === formData.customerId);
-  const selectedUnit = allUnits.find((u) => u.id === formData.unitId);
-  const selectedUnitBlocked = selectedUnit ? getUnitAvailability(selectedUnit).disabled : false;
-
+  const linesOk = lines.length > 0 && lines.every((l) => !lineError(l) && !conflicts[l.key]);
+  const problem = siteError(site);
   const checks = [
-    { label: 'Customer selected', ok: !!formData.customerId },
-    { label: 'Valid hire dates', ok: datesValid },
-    { label: 'Available unit chosen', ok: !!formData.unitId && !selectedUnitBlocked },
-    { label: 'Site contact & address', ok: !!formData.contactName && !!formData.contactPhone && !!formData.deliveryAddress && !w3wInvalid },
+    { label: 'Customer selected', ok: !!customerId },
+    { label: lines.length > 1 ? `${lines.length} units, all available` : 'Unit chosen and available', ok: linesOk },
+    { label: 'Site contact, phone & address', ok: !problem },
   ];
   const ready = checks.every((c) => c.ok);
+  const totals = quoteTotals(
+    lines.map((l) => ({ ...lineToInput(l), status: 'CONFIRMED' as const })),
+    quoteToInput(quote)
+  );
+  const allDates = lines.flatMap((l) => [l.startDate, l.endDate]).filter(Boolean).sort();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -218,30 +237,25 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
     setIsSubmitting(true);
     try {
       const result = await createBooking({
-        customerId: formData.customerId,
-        unitId: formData.unitId,
-        startDate: formData.startDate,
-        endDate: formData.endDate,
-        deliveryTime: formData.deliveryTime || undefined,
-        collectionTime: formData.collectionTime || undefined,
-        actionDate: formData.actionDate || undefined,
-        actionDescription: formData.actionDescription || undefined,
-        contactName: formData.contactName,
-        contactPhone: formData.contactPhone,
-        deliveryAddress: formData.deliveryAddress,
-        deliveryAddressId: formData.deliveryAddressId || undefined,
-        what3wordsAddress: normalizeW3w(formData.what3wordsAddress),
-        accessInstructions: formData.accessInstructions || undefined,
-        tempRequired: parseInt(formData.tempRequired),
-        powerAvailable: formData.powerAvailable,
-        cableLength: formData.cableLength,
-        accessories: formData.accessories,
-        application: formData.application || undefined,
-        notes: formData.notes || undefined,
+        customerId,
+        contactName: site.contactName.trim(),
+        contactPhone: site.contactPhone.trim(),
+        deliveryAddress: site.deliveryAddress.trim(),
+        deliveryAddressId: deliveryAddressId || undefined,
+        what3wordsAddress: normalizeW3w(site.what3wordsAddress),
+        accessInstructions: site.accessInstructions.trim() || undefined,
+        powerAvailable: site.powerAvailable,
+        powerOther: site.powerOther,
+        application: site.application.trim() || undefined,
+        notes: followUp.notes.trim() || undefined,
+        actionDate: followUp.actionDate || undefined,
+        actionDescription: followUp.actionDescription.trim() || undefined,
+        quote: quoteToInput(quote),
+        lines: lines.map(lineToInput),
       });
       if (result.success) {
         toast.success('Booking created', {
-          description: `${formData.unitId} for ${selectedCustomer?.name}, ${formatDate(formData.startDate)} – ${formatDate(formData.endDate)}`,
+          description: `${lines.map((l) => l.unitId).join(', ')} for ${selectedCustomer?.name}`,
         });
         router.push(result.booking ? `/bookings/${result.booking.id}` : '/bookings');
         router.refresh();
@@ -255,14 +269,16 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
     }
   };
 
+  const w3wInvalid = site.what3wordsAddress.trim() !== '' && !isValidW3w(site.what3wordsAddress);
+
   return (
     <form onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-3">
       <div className="space-y-6 lg:col-span-2">
         {/* 1. Customer & dates */}
-        <Section step={1} title="Customer & hire period" description="Who is hiring and for how long">
+        <Section step={1} title="Customer & hire period" description="Who is being invoiced and the usual delivery and collection dates">
           <Field label="Invoice customer" required>
             <div className="flex gap-2">
-              <select value={formData.customerId} onChange={(e) => selectCustomer(e.target.value)} className={selectClass} required>
+              <select value={customerId} onChange={(e) => selectCustomer(e.target.value)} className={selectClass} required>
                 <option value="">Select a customer…</option>
                 {customerList.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -275,43 +291,44 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
               </Button>
             </div>
           </Field>
-          {selectedCustomer?.preferences?.notes && (
+          {prefs?.notes && (
             <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-600/15 ring-inset">
-              <span className="font-semibold">Customer note:</span> {selectedCustomer.preferences.notes}
+              <span className="font-semibold">Customer note:</span> {prefs.notes}
             </p>
           )}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Delivery date" required>
-              <Input type="date" value={formData.startDate} onChange={(e) => updateField('startDate', e.target.value)} className="h-9" required />
+              <Input type="date" value={defaults.startDate} onChange={(e) => setDefault('startDate', e.target.value)} className="h-9" />
             </Field>
             <Field label="Collection date" required>
               <Input
                 type="date"
-                value={formData.endDate}
-                min={formData.startDate || undefined}
-                onChange={(e) => updateField('endDate', e.target.value)}
+                value={defaults.endDate}
+                min={defaults.startDate || undefined}
+                onChange={(e) => setDefault('endDate', e.target.value)}
                 className="h-9"
-                aria-invalid={!!formData.endDate && !!formData.startDate && !datesValid}
-                required
+                aria-invalid={!!defaults.endDate && !!defaults.startDate && !datesValid}
               />
             </Field>
             <Field label="Delivery time">
-              <Input type="time" value={formData.deliveryTime} onChange={(e) => updateField('deliveryTime', e.target.value)} className="h-9" />
+              <Input type="time" value={defaults.deliveryTime} onChange={(e) => setDefault('deliveryTime', e.target.value)} className="h-9" />
             </Field>
             <Field label="Collection time">
-              <Input type="time" value={formData.collectionTime} onChange={(e) => updateField('collectionTime', e.target.value)} className="h-9" />
+              <Input type="time" value={defaults.collectionTime} onChange={(e) => setDefault('collectionTime', e.target.value)} className="h-9" />
             </Field>
           </div>
-          {formData.startDate && formData.endDate && !datesValid && (
-            <p className="text-xs font-medium text-red-600">Collection date must be on or after the delivery date.</p>
-          )}
+          {defaults.startDate && defaults.endDate && !datesValid && <p className="text-xs font-medium text-red-600">Collection date must be on or after the delivery date.</p>}
         </Section>
 
-        {/* 2. Unit */}
+        {/* 2. Units */}
         <Section
           step={2}
-          title="Unit"
-          description={datesValid ? `Availability for ${formatDate(formData.startDate)} – ${formatDate(formData.endDate)}` : 'Set hire dates to check availability'}
+          title="Units"
+          description={
+            datesValid
+              ? `Pick one or more units. Availability for ${formatDate(defaults.startDate)} – ${formatDate(defaults.endDate)}`
+              : 'Pick one or more units. Set hire dates to check availability'
+          }
           action={isCheckingAvailability && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
         >
           <SegmentedControl
@@ -328,15 +345,15 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
           />
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {filteredUnits.map((unit) => {
-              const { disabled, label } = getUnitAvailability(unit);
-              const selected = formData.unitId === unit.id;
+              const { disabled, label } = unitState(unit);
+              const selected = lines.some((l) => l.unitId === unit.id);
               const Icon = UNIT_TYPE_ICON[unit.unitType];
               return (
                 <button
                   key={unit.id}
                   type="button"
                   disabled={disabled}
-                  onClick={() => updateField('unitId', unit.id)}
+                  onClick={() => toggleUnit(unit)}
                   aria-pressed={selected}
                   className={cn(
                     'relative flex items-center gap-3 rounded-md border bg-white p-3 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
@@ -350,7 +367,7 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
                   <div className="min-w-0 flex-1">
                     <div className="font-mono-unit text-[13px] text-foreground">{unit.id}</div>
                     <div className="truncate text-xs text-muted-foreground">
-                      {UNIT_SIZE_LABELS[unit.size]} · {unit.powerType === 'INDUSTRIAL' ? '32A' : '13A'}
+                      {UNIT_TYPE_LABELS[unit.unitType]} · {UNIT_SIZE_LABELS[unit.size]}
                     </div>
                   </div>
                   {selected ? (
@@ -358,28 +375,28 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
                       <Check className="size-3" strokeWidth={3} />
                     </span>
                   ) : (
-                    <span className={cn('text-[11px] font-medium', label === 'Available' ? 'text-emerald-700' : 'text-muted-foreground')}>{label}</span>
+                    <span className={cn('text-[11px] font-medium', label === 'Available' ? 'text-emerald-700' : label === 'Breakdown' ? 'text-red-600' : 'text-muted-foreground')}>{label}</span>
                   )}
                 </button>
               );
             })}
           </div>
+          <div className="space-y-2 border-t pt-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[13px] font-medium text-foreground">Units on this booking ({lines.length})</h3>
+              {lines.length > 1 && <span className="text-xs text-muted-foreground">Change a unit&apos;s dates if it goes out or comes back separately</span>}
+            </div>
+            <LinesEditor lines={lines} units={allUnits} conflicts={conflicts} onChange={updateLine} onRemove={removeLine} />
+          </div>
         </Section>
 
         {/* 3. Site */}
-        <Section step={3} title="Site & contact" description="Where the unit is going and who to call on the day">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Site contact" required>
-              <Input value={formData.contactName} onChange={(e) => updateField('contactName', e.target.value)} className="h-9" required />
-            </Field>
-            <Field label="Contact phone" required>
-              <Input value={formData.contactPhone} onChange={(e) => updateField('contactPhone', e.target.value)} className="h-9" required />
-            </Field>
-          </div>
+        <Section step={3} title="Site & contact" description="Where the units are going and who to call on the day">
+          <ContactAndPowerFields value={site} onChange={(patch) => setSite((s) => ({ ...s, ...patch }))} />
           <Field label="Delivery address" required>
             <div className="space-y-2">
               {customerAddresses.length > 0 && (
-                <select value={formData.deliveryAddressId} onChange={(e) => handleAddressSelect(e.target.value)} className={selectClass}>
+                <select value={deliveryAddressId} onChange={(e) => handleAddressSelect(e.target.value)} className={selectClass}>
                   <option value="">Invoice address</option>
                   {customerAddresses.map((a) => (
                     <option key={a.id} value={a.id}>
@@ -390,20 +407,22 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
               )}
               <div className="flex gap-2">
                 <Input
-                  value={formData.deliveryAddress}
-                  onChange={(e) => setFormData((p) => ({ ...p, deliveryAddress: e.target.value, deliveryAddressId: '' }))}
+                  value={site.deliveryAddress}
+                  onChange={(e) => {
+                    setSite((s) => ({ ...s, deliveryAddress: e.target.value }));
+                    setDeliveryAddressId('');
+                  }}
                   placeholder="Street, town, postcode"
                   className="h-9"
-                  required
                 />
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => {
-                    setNewAddress({ label: '', address: formData.deliveryAddress });
+                    setNewAddress({ label: '', address: site.deliveryAddress });
                     setShowNewAddressDialog(true);
                   }}
-                  disabled={!formData.customerId}
+                  disabled={!customerId}
                   className="h-9 shrink-0 gap-1 px-3"
                   title="Save as a new customer address"
                 >
@@ -415,8 +434,8 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
           <div className="grid gap-4 sm:grid-cols-[220px_1fr]">
             <Field label="what3words location" hint={w3wInvalid ? undefined : 'Exact drop-off spot on site'}>
               <Input
-                value={formData.what3wordsAddress}
-                onChange={(e) => updateField('what3wordsAddress', e.target.value)}
+                value={site.what3wordsAddress}
+                onChange={(e) => setSite((s) => ({ ...s, what3wordsAddress: e.target.value }))}
                 placeholder="///filled.count.soap"
                 className="h-9"
                 aria-invalid={w3wInvalid}
@@ -425,8 +444,8 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
             </Field>
             <Field label="Access instructions">
               <Input
-                value={formData.accessInstructions}
-                onChange={(e) => updateField('accessInstructions', e.target.value)}
+                value={site.accessInstructions}
+                onChange={(e) => setSite((s) => ({ ...s, accessInstructions: e.target.value }))}
                 placeholder="e.g. Use rear gate, ring site manager on arrival"
                 className="h-9"
               />
@@ -434,81 +453,28 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
           </div>
         </Section>
 
-        {/* 4. Requirements */}
-        <Section step={4} title="Requirements" description="Temperature, power and accessories">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Temperature (°C)" required>
-              <Input type="number" min="-20" max="10" value={formData.tempRequired} onChange={(e) => updateField('tempRequired', e.target.value)} className="h-9" required />
-            </Field>
-            <Field label="Site power" required>
-              <select value={formData.powerAvailable} onChange={(e) => updateField('powerAvailable', e.target.value as PowerType)} className={selectClass}>
-                {(Object.keys(POWER_LABELS) as PowerType[]).map((p) => (
-                  <option key={p} value={p}>
-                    {POWER_LABELS[p]}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Application">
-              <Input value={formData.application} onChange={(e) => updateField('application', e.target.value)} placeholder="e.g. fresh produce" className="h-9" />
-            </Field>
-          </div>
-          <div className="space-y-1.5">
-            <span className="text-[13px] font-medium text-foreground">Power cable length</span>
-            <SegmentedControl
-              size="sm"
-              value={formData.cableLength}
-              onChange={(v) => updateField('cableLength', v)}
-              options={CABLE_LENGTHS.map((l) => ({ value: l, label: l }))}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <span className="text-[13px] font-medium text-foreground">Accessories</span>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {ACCESSORIES.map(({ key, label, hint }) => {
-                const on = formData.accessories[key];
-                return (
-                  <label
-                    key={key}
-                    className={cn('flex cursor-pointer items-center gap-3 rounded-md border bg-white px-3 py-2.5 transition-colors hover:bg-muted/40', on && 'border-foreground/30')}
-                  >
-                    <input type="checkbox" checked={on} onChange={() => toggleAccessory(key)} className="peer sr-only" />
-                    <span
-                      className={cn(
-                        'flex size-4 shrink-0 items-center justify-center rounded border peer-focus-visible:ring-2 peer-focus-visible:ring-ring/50',
-                        on ? 'border-[var(--brand-red)] bg-[var(--brand-red)] text-white' : 'border-input'
-                      )}
-                    >
-                      {on && <Check className="size-3" strokeWidth={3} />}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-medium text-foreground">{label}</span>
-                      <span className="block text-xs text-muted-foreground">{hint}</span>
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
+        {/* 4. Pricing */}
+        <Section step={4} title="Pricing" description="Quoted to the customer, used to raise the invoice">
+          <QuoteEditor lines={lines} value={quote} onChange={setQuote} />
         </Section>
 
         {/* 5. Follow-up */}
         <Section step={5} title="Follow-up & notes" description="Optional reminder and internal notes">
           <div className="grid gap-4 sm:grid-cols-[180px_1fr]">
             <Field label="Action date" hint="Appears in alerts when due">
-              <Input type="date" value={formData.actionDate} onChange={(e) => updateField('actionDate', e.target.value)} className="h-9" />
+              <Input type="date" value={followUp.actionDate} onChange={(e) => setFollowUp((f) => ({ ...f, actionDate: e.target.value }))} className="h-9" />
             </Field>
             <Field label="Action required">
               <Input
-                value={formData.actionDescription}
-                onChange={(e) => updateField('actionDescription', e.target.value)}
+                value={followUp.actionDescription}
+                onChange={(e) => setFollowUp((f) => ({ ...f, actionDescription: e.target.value }))}
                 placeholder="e.g. Confirm collection date with customer"
                 className="h-9"
               />
             </Field>
           </div>
           <Field label="Internal notes">
-            <textarea value={formData.notes} onChange={(e) => updateField('notes', e.target.value)} placeholder="Anything the team should know" className={textareaClass} />
+            <textarea value={followUp.notes} onChange={(e) => setFollowUp((f) => ({ ...f, notes: e.target.value }))} placeholder="Anything the team should know" className={textareaClass} />
           </Field>
         </Section>
       </div>
@@ -521,19 +487,20 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
           </header>
           <dl className="divide-y text-sm">
             <SummaryRow label="Customer" value={selectedCustomer?.name} />
+            <SummaryRow label="Hire period" value={allDates.length ? `${formatDate(allDates[0])} – ${formatDate(allDates.at(-1))}` : undefined} />
             <SummaryRow
-              label="Hire period"
-              value={datesValid ? `${formatDate(formData.startDate)} – ${formatDate(formData.endDate)}` : undefined}
-              sub={datesValid ? `${daysBetween(formData.startDate, formData.endDate)} days` : undefined}
+              label={lines.length > 1 ? 'Units' : 'Unit'}
+              value={lines.length ? <span className="font-mono-unit">{lines.map((l) => l.unitId).join(', ')}</span> : undefined}
             />
-            <SummaryRow
-              label="Unit"
-              value={selectedUnit ? <span className="font-mono-unit">{selectedUnit.id}</span> : undefined}
-              sub={selectedUnit ? UNIT_TYPE_LABELS[selectedUnit.unitType] : undefined}
-            />
-            <SummaryRow label="Site" value={formData.deliveryAddress || undefined} />
-            <SummaryRow label="Spec" value={`${formData.tempRequired}°C · ${formData.powerAvailable === 'INDUSTRIAL' ? '32A' : '13A'} · ${formData.cableLength}`} />
+            <SummaryRow label="Site" value={site.deliveryAddress || undefined} />
+            <SummaryRow label="Contact" value={site.contactName || undefined} sub={site.contactPhone || undefined} />
+            <SummaryRow label="Power" value={powerShort(site)} />
           </dl>
+          {lines.length > 0 && (
+            <div className="border-t p-3">
+              <QuoteTotals totals={totals} />
+            </div>
+          )}
           <ul className="space-y-1.5 border-t bg-muted/30 px-4 py-3">
             {checks.map((c) => (
               <li key={c.label} className={cn('flex items-center gap-2 text-xs', c.ok ? 'text-foreground' : 'text-muted-foreground')}>
@@ -556,33 +523,18 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
 
       {/* New customer */}
       <Dialog open={showNewCustomerDialog} onOpenChange={setShowNewCustomerDialog}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Add customer</DialogTitle>
             <DialogDescription>The new customer will be selected for this booking.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <Field label="Company or name" required>
-              <Input value={newCustomer.name} onChange={(e) => setNewCustomer((p) => ({ ...p, name: e.target.value }))} className="h-9" />
-            </Field>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Phone" required>
-                <Input value={newCustomer.phone} onChange={(e) => setNewCustomer((p) => ({ ...p, phone: e.target.value }))} className="h-9" />
-              </Field>
-              <Field label="Email">
-                <Input type="email" value={newCustomer.email} onChange={(e) => setNewCustomer((p) => ({ ...p, email: e.target.value }))} className="h-9" />
-              </Field>
-            </div>
-            <Field label="Invoice address" required>
-              <Input value={newCustomer.address} onChange={(e) => setNewCustomer((p) => ({ ...p, address: e.target.value }))} className="h-9" />
-            </Field>
-          </div>
+          <CustomerFields value={newCustomer} onChange={setNewCustomer} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setShowNewCustomerDialog(false)} className="h-9 px-4">
               Cancel
             </Button>
-            <Button type="button" onClick={handleAddCustomer} className="h-9 px-4 hover:bg-[var(--brand-red-dark)]">
-              Add customer
+            <Button type="button" onClick={handleAddCustomer} disabled={isAddingCustomer} className="h-9 px-4 hover:bg-[var(--brand-red-dark)]">
+              {isAddingCustomer ? 'Adding…' : 'Add customer'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -600,22 +552,14 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
               <Input value={newAddress.label} onChange={(e) => setNewAddress((p) => ({ ...p, label: e.target.value }))} placeholder="e.g. Warehouse" className="h-9" />
             </Field>
             <Field label="Address" required>
-              <Input
-                value={newAddress.address}
-                onChange={(e) => setNewAddress((p) => ({ ...p, address: e.target.value }))}
-                className="h-9"
-              />
+              <Input value={newAddress.address} onChange={(e) => setNewAddress((p) => ({ ...p, address: e.target.value }))} className="h-9" />
             </Field>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setShowNewAddressDialog(false)} className="h-9 px-4">
               Cancel
             </Button>
-            <Button
-              type="button"
-              onClick={handleAddAddress}
-              className="h-9 px-4 hover:bg-[var(--brand-red-dark)]"
-            >
+            <Button type="button" onClick={handleAddAddress} className="h-9 px-4 hover:bg-[var(--brand-red-dark)]">
               Save address
             </Button>
           </DialogFooter>

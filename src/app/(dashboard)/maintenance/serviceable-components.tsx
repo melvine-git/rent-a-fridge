@@ -12,16 +12,9 @@ import { EmptyState } from '@/components/app/empty-state';
 import { Field, selectClass } from '@/components/app/field';
 import { saveServiceableComponent, removeServiceableComponent } from '@/lib/actions';
 import { COMPONENT_LABELS } from '@/lib/domain';
-import { CircuitBoard, Fan, Gauge, ListChecks, Pencil, Plus, Settings, Thermometer, Trash2, type LucideIcon } from 'lucide-react';
+import { ListChecks, Pencil, Plus, Trash2 } from 'lucide-react';
+import { COMPONENT_ICONS as ICONS } from '@/components/app/component-icon';
 import type { BOMComponent, ServiceableComponent } from '@/types';
-
-const ICONS: Record<BOMComponent['type'], LucideIcon> = {
-  COMPRESSOR: Gauge,
-  EVAPORATOR: Thermometer,
-  CONTROLLER: CircuitBoard,
-  FAN_MOTOR: Fan,
-  OTHER: Settings,
-};
 
 type Draft = { id?: string; type: BOMComponent['type']; name: string; description: string; intervalMonths: string };
 const EMPTY: Draft = { type: 'OTHER', name: '', description: '', intervalMonths: '12' };

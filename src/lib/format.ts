@@ -98,6 +98,18 @@ export function w3wUrl(value: string): string {
   return `https://what3words.com/${encodeURIComponent(value.trim().replace(/^\/+/, ''))}`;
 }
 
+/** One-line address: "1 Main St, Unit 2, Belfast, Co. Antrim, BT1 1AA, United Kingdom" */
+export function formatAddress(a: { line1: string; line2?: string; town?: string; county?: string; postcode: string; country: string }): string {
+  return [a.line1, a.line2, a.town, a.county, a.postcode, a.country]
+    .map((p) => p?.trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
+export function formatFileSize(bytes: number): string {
+  return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 export function greeting(date = new Date()): string {
   const h = date.getHours();
   return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';

@@ -9,20 +9,21 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Pill } from '@/components/ui/status-badge';
 import { UnitTypeIcon } from '@/components/app/unit-type-icon';
 import { SignaturePad } from '@/components/app/signature-pad';
-import { markDelivered, markCollected } from '@/lib/actions';
-import { POWER_LABELS } from '@/lib/domain';
+import { completeJobs } from '@/lib/actions';
+import { powerLabel, powerShort } from '@/lib/domain';
 import { formatDate, formatDayDate, formatPhone, isValidW3w, normalizeW3w, w3wUrl } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { ArrowUpRight, Check, CircleCheck, ExternalLink, MapPin, Navigation, Phone, TriangleAlert } from 'lucide-react';
+import { ArrowUpRight, Check, CircleCheck, ExternalLink, MapPin, Navigation, Package, Phone, TriangleAlert } from 'lucide-react';
 import type { BookingWithDetails, DeliveryChecklist, Staff } from '@/types';
 
 export type JobType = 'delivery' | 'collection';
 
 export interface JobTarget {
-  booking: BookingWithDetails;
+  /** Units of one booking handled on the same visit; the first one supplies site and contact. */
+  bookings: BookingWithDetails[];
   type: JobType;
-  /** Checklist from the delivery job, so collections know what was left on site. */
-  deliveredChecklist?: DeliveryChecklist;
+  /** Delivery checklists by booking id, so collections know what was left on site. */
+  delivered?: Record<string, DeliveryChecklist | undefined>;
 }
 
 type CheckKey =
@@ -34,21 +35,50 @@ type CheckKey =
   | 'powerCableConnected'
   | 'hitchLockSecured'
   | 'wheelClampSecured'
-  | 'doorLockSecured';
+  | 'doorLockSecured'
+  | 'tempRecorderFitted';
 
-function checklistFor({ booking, type, deliveredChecklist: left }: JobTarget): { key: CheckKey; label: string }[] {
+const NO_CHECKS: Record<CheckKey, boolean> = {
+  unitClean: false,
+  doorsSealed: false,
+  tempVerified: false,
+  powerConnected: false,
+  powerSupplyChecked: false,
+  powerCableConnected: false,
+  hitchLockSecured: false,
+  wheelClampSecured: false,
+  doorLockSecured: false,
+  tempRecorderFitted: false,
+};
+
+/** Accessories booked for a unit (delivery) or actually left on site (collection), for load lists. */
+export function accessoryItems(booking: BookingWithDetails, left?: DeliveryChecklist): string[] {
+  const acc = booking.accessories;
+  const has = (fitted: boolean | undefined, booked: boolean | undefined) => (left ? !!fitted : !!booked);
+  const cable = left ? left.cableLengthUsed : booking.cableLength;
+  return [
+    cable && `${cable} cable`,
+    has(left?.hitchLockSecured, acc?.hitchLock) && 'Hitch lock',
+    has(left?.wheelClampSecured, acc?.wheelClamp) && 'Wheel clamp',
+    has(left?.doorLockSecured, acc?.doorLock) && 'Door lock',
+    has(left?.tempRecorderFitted, acc?.tempRecorder) && 'Temperature recorder',
+  ].filter((x): x is string => !!x);
+}
+
+function checklistFor(booking: BookingWithDetails, type: JobType, left?: DeliveryChecklist): { key: CheckKey; label: string }[] {
   const acc = booking.accessories;
   if (type === 'delivery') {
     return [
       { key: 'unitClean', label: 'Unit cleaned and inspected' },
       { key: 'doorsSealed', label: 'Door seals checked' },
-      { key: 'powerSupplyChecked', label: `Site power verified (${POWER_LABELS[booking.powerAvailable]})` },
+      { key: 'powerSupplyChecked', label: `Site power verified (${powerLabel(booking)})` },
       { key: 'powerCableConnected', label: `Power cable connected${booking.cableLength ? ` (${booking.cableLength})` : ''}` },
       { key: 'powerConnected', label: 'Unit powered on and running' },
       { key: 'tempVerified', label: `Temperature set to ${booking.tempRequired}°C` },
       ...(acc?.hitchLock ? [{ key: 'hitchLockSecured' as const, label: 'Hitch lock fitted' }] : []),
       ...(acc?.wheelClamp ? [{ key: 'wheelClampSecured' as const, label: 'Wheel clamp fitted' }] : []),
       ...(acc?.doorLock ? [{ key: 'doorLockSecured' as const, label: 'Door lock fitted' }] : []),
+      ...(acc?.tempRecorder ? [{ key: 'tempRecorderFitted' as const, label: 'Temperature recorder fitted' }] : []),
     ];
   }
   // Recover whatever was actually fitted on delivery, falling back to what was booked
@@ -58,9 +88,10 @@ function checklistFor({ booking, type, deliveredChecklist: left }: JobTarget): {
     { key: 'powerCableConnected', label: `Power cable recovered${cable ? ` (${cable})` : ''}` },
     { key: 'unitClean', label: 'Unit emptied and cleaned out' },
     { key: 'doorsSealed', label: 'Unit inspected for damage' },
-    ...((left?.hitchLockSecured ?? acc?.hitchLock) ? [{ key: 'hitchLockSecured' as const, label: 'Hitch lock recovered' }] : []),
-    ...((left?.wheelClampSecured ?? acc?.wheelClamp) ? [{ key: 'wheelClampSecured' as const, label: 'Wheel clamp recovered' }] : []),
-    ...((left?.doorLockSecured ?? acc?.doorLock) ? [{ key: 'doorLockSecured' as const, label: 'Door lock recovered' }] : []),
+    ...((left ? left.hitchLockSecured : acc?.hitchLock) ? [{ key: 'hitchLockSecured' as const, label: 'Hitch lock recovered' }] : []),
+    ...((left ? left.wheelClampSecured : acc?.wheelClamp) ? [{ key: 'wheelClampSecured' as const, label: 'Wheel clamp recovered' }] : []),
+    ...((left ? left.doorLockSecured : acc?.doorLock) ? [{ key: 'doorLockSecured' as const, label: 'Door lock recovered' }] : []),
+    ...((left ? left.tempRecorderFitted : acc?.tempRecorder) ? [{ key: 'tempRecorderFitted' as const, label: 'Temperature recorder recovered' }] : []),
   ];
 }
 
@@ -69,40 +100,36 @@ export function JobDrawer({ job, staff, onClose, onCompleted }: { job: JobTarget
   return (
     <Sheet open={!!job} onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="right" className="w-full gap-0 sm:max-w-lg">
-        {job && <JobSheet key={job.booking.id + job.type} job={job} staff={staff} onComplete={onCompleted} />}
+        {job && job.bookings.length > 0 && <JobSheet key={job.bookings.map((b) => b.id).join() + job.type} job={job} staff={staff} onComplete={onCompleted} />}
       </SheetContent>
     </Sheet>
   );
 }
 
 function JobSheet({ job, staff, onComplete }: { job: JobTarget; staff: Staff[]; onComplete: () => void }) {
-  const { booking, type } = job;
+  const { bookings, type } = job;
+  const site = bookings[0];
   const isDelivery = type === 'delivery';
+  const multi = bookings.length > 1;
   const [isPending, startTransition] = useTransition();
-  const items = checklistFor(job);
-  const [checked, setChecked] = useState<Record<CheckKey, boolean>>({
-    unitClean: false,
-    doorsSealed: false,
-    tempVerified: false,
-    powerConnected: false,
-    powerSupplyChecked: false,
-    powerCableConnected: false,
-    hitchLockSecured: false,
-    wheelClampSecured: false,
-    doorLockSecured: false,
-  });
+  const [included, setIncluded] = useState<Record<string, boolean>>(() => Object.fromEntries(bookings.map((b) => [b.id, true])));
+  const [checked, setChecked] = useState<Record<string, Record<CheckKey, boolean>>>(() => Object.fromEntries(bookings.map((b) => [b.id, { ...NO_CHECKS }])));
   const [signedBy, setSignedBy] = useState('');
   const [signature, setSignature] = useState<string | null>(null);
-  const [w3w, setW3w] = useState(booking.what3wordsAddress ?? '');
+  const [w3w, setW3w] = useState(site.what3wordsAddress ?? '');
   const [hasDamage, setHasDamage] = useState(false);
   const [damageNotes, setDamageNotes] = useState('');
   const drivers = staff.filter((s) => s.role === 'DRIVER');
   const [staffId, setStaffId] = useState(drivers[0]?.id ?? staff[0]?.id ?? '');
 
-  const done = items.filter((i) => checked[i.key]).length;
+  const units = bookings.map((b) => ({ booking: b, items: checklistFor(b, type, job.delivered?.[b.id]) }));
+  const active = units.filter((u) => included[u.booking.id]);
+  const total = active.reduce((n, u) => n + u.items.length, 0);
+  const done = active.reduce((n, u) => n + u.items.filter((i) => checked[u.booking.id][i.key]).length, 0);
   const w3wInvalid = w3w.trim() !== '' && !isValidW3w(w3w);
   const missing = [
-    done < items.length && `${items.length - done} checklist item${items.length - done > 1 ? 's' : ''}`,
+    active.length === 0 && 'at least one unit',
+    done < total && `${total - done} checklist item${total - done > 1 ? 's' : ''}`,
     !signedBy.trim() && 'name of person signing',
     !signature && 'signature',
     hasDamage && !damageNotes.trim() && 'damage description',
@@ -111,27 +138,31 @@ function JobSheet({ job, staff, onComplete }: { job: JobTarget; staff: Staff[]; 
 
   const handleConfirm = () => {
     startTransition(async () => {
-      const payload = {
-        bookingId: booking.id,
-        staffId,
-        checklist: {
-          ...checked,
-          // Collections record "recovered" against the same keys; power is off afterwards
-          ...(isDelivery ? {} : { powerConnected: false }),
-          tempSetting: isDelivery ? booking.tempRequired : 0,
-          cableLengthUsed: isDelivery ? booking.cableLength : job.deliveredChecklist?.cableLengthUsed,
-        },
-        tempSet: isDelivery ? booking.tempRequired : 0,
-        signedBy: signedBy.trim(),
-        signatureData: signature ?? undefined,
-        what3wordsAddress: normalizeW3w(w3w),
-        damageNotes: hasDamage ? damageNotes.trim() : undefined,
-        photoUrls: [],
-      };
-      const result = isDelivery ? await markDelivered(payload) : await markCollected(payload);
+      const left = (id: string) => job.delivered?.[id];
+      const result = await completeJobs(
+        isDelivery ? 'DELIVERY' : 'COLLECTION',
+        active.map(({ booking }) => ({
+          bookingId: booking.id,
+          staffId,
+          checklist: {
+            ...checked[booking.id],
+            // Collections record "recovered" against the same keys; power is off afterwards
+            ...(isDelivery ? {} : { powerConnected: false }),
+            tempSetting: isDelivery ? booking.tempRequired : 0,
+            cableLengthUsed: isDelivery ? booking.cableLength : left(booking.id)?.cableLengthUsed,
+          },
+          tempSet: isDelivery ? booking.tempRequired : 0,
+          signedBy: signedBy.trim(),
+          signatureData: signature ?? undefined,
+          what3wordsAddress: normalizeW3w(w3w),
+          damageNotes: hasDamage ? damageNotes.trim() : undefined,
+          photoUrls: [],
+        }))
+      );
+      const codes = active.map((u) => u.booking.unit.id).join(', ');
       if (result.success) {
         toast.success(isDelivery ? 'Delivery confirmed' : 'Collection confirmed', {
-          description: isDelivery ? `${booking.unit.id} is now on hire. A collection job has been scheduled.` : `${booking.unit.id} is back and available. Booking complete.`,
+          description: isDelivery ? `${codes} now on hire. Collection scheduled.` : `${codes} back and available.`,
         });
         onComplete();
       } else {
@@ -147,97 +178,130 @@ function JobSheet({ job, staff, onComplete }: { job: JobTarget; staff: Staff[]; 
           <Pill tone={isDelivery ? 'scheduled' : 'warning'} showDot>
             {isDelivery ? 'Delivery' : 'Collection'}
           </Pill>
-          <span className="font-mono-unit text-xs text-muted-foreground">{booking.id}</span>
+          <span className="font-mono-unit text-xs text-muted-foreground">{site.groupId ?? site.id}</span>
         </div>
-        <SheetTitle className="mt-1.5 flex items-center gap-2 text-lg font-semibold">
-          <UnitTypeIcon type={booking.unit.unitType} className="size-5" />
-          <span className="font-mono-unit">{booking.unit.id}</span>
+        <SheetTitle className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-lg font-semibold">
+          {!multi && <UnitTypeIcon type={site.unit.unitType} className="size-5" />}
+          <span className="font-mono-unit">{bookings.map((b) => b.unit.id).join(' + ')}</span>
           <span className="font-normal text-muted-foreground">{isDelivery ? '→' : '←'}</span>
-          <span className="truncate">{booking.customer.name}</span>
+          <span className="truncate">{site.customer.name}</span>
         </SheetTitle>
         <SheetDescription>
           {isDelivery
-            ? `${formatDayDate(booking.startDate)}${booking.deliveryTime ? ` at ${booking.deliveryTime}` : ''}`
-            : `On hire since ${formatDate(booking.startDate)} · due back ${formatDate(booking.endDate)}${booking.collectionTime ? ` at ${booking.collectionTime}` : ''}`}
+            ? `${formatDayDate(site.startDate)}${site.deliveryTime ? ` at ${site.deliveryTime}` : ''}`
+            : `On hire since ${formatDate(site.startDate)} · due back ${formatDate(site.endDate)}${site.collectionTime ? ` at ${site.collectionTime}` : ''}`}
         </SheetDescription>
       </SheetHeader>
 
       <div className="scrollbar-thin flex-1 space-y-6 overflow-y-auto px-5 py-5">
         {/* Site */}
-        <div className="space-y-3">
-          <div className="rounded-md border p-3">
-            <div className="flex items-start gap-3">
-              <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-foreground">{booking.deliveryAddress}</div>
-                {booking.what3wordsAddress && (
-                  <a href={w3wUrl(booking.what3wordsAddress)} target="_blank" rel="noopener noreferrer" className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-[var(--brand-red)] hover:underline">
-                    {booking.what3wordsAddress} <ExternalLink className="size-3" />
-                  </a>
-                )}
-                {booking.accessInstructions && <p className="mt-1 text-xs text-muted-foreground">{booking.accessInstructions}</p>}
-              </div>
-            </div>
-            <div className="mt-3 flex items-center gap-3 border-t pt-3">
-              <div className="min-w-0 flex-1">
-                <div className="text-sm text-foreground">{booking.contactName}</div>
-                <div className="tabular text-xs text-muted-foreground">{formatPhone(booking.contactPhone)}</div>
-              </div>
-              <a href={`tel:${booking.contactPhone}`} className="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium hover:bg-muted">
-                <Phone className="size-3.5" /> Call
-              </a>
-              <a
-                href={booking.what3wordsAddress ? w3wUrl(booking.what3wordsAddress) : `https://maps.google.com/?q=${encodeURIComponent(booking.deliveryAddress)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium hover:bg-muted"
-              >
-                <Navigation className="size-3.5" /> Navigate
-              </a>
+        <div className="rounded-md border p-3">
+          <div className="flex items-start gap-3">
+            <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium text-foreground">{site.deliveryAddress}</div>
+              {site.what3wordsAddress && (
+                <a href={w3wUrl(site.what3wordsAddress)} target="_blank" rel="noopener noreferrer" className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-[var(--brand-red)] hover:underline">
+                  {site.what3wordsAddress} <ExternalLink className="size-3" />
+                </a>
+              )}
+              {site.accessInstructions && <p className="mt-1 text-xs text-muted-foreground">{site.accessInstructions}</p>}
             </div>
           </div>
-
-          {isDelivery && (
-            <div className="grid grid-cols-3 divide-x rounded-md border text-center">
-              <Spec label="Temperature" value={`${booking.tempRequired}°C`} />
-              <Spec label="Power" value={booking.powerAvailable === 'INDUSTRIAL' ? '32A' : '13A'} />
-              <Spec label="Cable" value={booking.cableLength ?? '—'} />
+          <div className="mt-3 flex items-center gap-3 border-t pt-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm text-foreground">{site.contactName}</div>
+              <div className="tabular text-xs text-muted-foreground">{formatPhone(site.contactPhone)}</div>
             </div>
-          )}
+            <a href={`tel:${site.contactPhone}`} className="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium hover:bg-muted">
+              <Phone className="size-3.5" /> Call
+            </a>
+            <a
+              href={site.what3wordsAddress ? w3wUrl(site.what3wordsAddress) : `https://maps.google.com/?q=${encodeURIComponent(site.deliveryAddress)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium hover:bg-muted"
+            >
+              <Navigation className="size-3.5" /> Navigate
+            </a>
+          </div>
         </div>
 
-        {/* Checklist */}
+        {/* Checklists, one per unit */}
         <div>
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-foreground">{isDelivery ? 'Handover checklist' : 'Collection checklist'}</h3>
             <span className="tabular text-xs text-muted-foreground">
-              {done}/{items.length} complete
+              {done}/{total} complete
             </span>
           </div>
           <div className="mb-3 h-1 overflow-hidden rounded-full bg-muted">
-            <div className="h-full bg-emerald-500 transition-all" style={{ width: `${(done / items.length) * 100}%` }} />
+            <div className="h-full bg-emerald-500 transition-all" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
           </div>
-          <ul className="divide-y rounded-md border">
-            {items.map((item) => {
-              const on = checked[item.key];
+          <div className="space-y-3">
+            {units.map(({ booking, items }) => {
+              const on = included[booking.id];
+              const load = accessoryItems(booking, isDelivery ? undefined : job.delivered?.[booking.id]);
               return (
-                <li key={item.key}>
-                  <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-muted/40">
-                    <input type="checkbox" className="peer sr-only" checked={on} onChange={(e) => setChecked((p) => ({ ...p, [item.key]: e.target.checked }))} />
-                    <span
-                      className={cn(
-                        'flex size-5 shrink-0 items-center justify-center rounded border transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-ring/50',
-                        on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-input bg-white'
-                      )}
-                    >
-                      {on && <Check className="size-3.5" strokeWidth={3} />}
+                <section key={booking.id} className={cn('overflow-hidden rounded-md border', !on && 'opacity-60')}>
+                  <header className="flex items-center gap-2 border-b bg-muted/40 px-3 py-2">
+                    <UnitTypeIcon type={booking.unit.unitType} />
+                    <span className="font-mono-unit text-sm text-foreground">{booking.unit.id}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {booking.tempRequired}°C · {powerShort(booking)}
                     </span>
-                    <span className={cn('text-sm', on ? 'text-muted-foreground line-through decoration-muted-foreground/40' : 'text-foreground')}>{item.label}</span>
-                  </label>
-                </li>
+                    {multi && (
+                      <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-xs font-medium text-foreground">
+                        <input type="checkbox" checked={on} onChange={(e) => setIncluded((p) => ({ ...p, [booking.id]: e.target.checked }))} className="size-3.5 accent-[var(--brand-red)]" />
+                        {isDelivery ? 'Delivering now' : 'Collecting now'}
+                      </label>
+                    )}
+                  </header>
+                  {on && (
+                    <>
+                      {load.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 border-b px-3 py-2 text-xs">
+                          <Package className="size-3.5 text-muted-foreground" />
+                          <span className="text-muted-foreground">{isDelivery ? 'Load:' : 'Bring back:'}</span>
+                          {load.map((l) => (
+                            <span key={l} className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-800 ring-1 ring-amber-600/20 ring-inset">
+                              {l}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <ul className="divide-y">
+                        {items.map((item) => {
+                          const ticked = checked[booking.id][item.key];
+                          return (
+                            <li key={item.key}>
+                              <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-muted/40">
+                                <input
+                                  type="checkbox"
+                                  className="peer sr-only"
+                                  checked={ticked}
+                                  onChange={(e) => setChecked((p) => ({ ...p, [booking.id]: { ...p[booking.id], [item.key]: e.target.checked } }))}
+                                />
+                                <span
+                                  className={cn(
+                                    'flex size-5 shrink-0 items-center justify-center rounded border transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-ring/50',
+                                    ticked ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-input bg-white'
+                                  )}
+                                >
+                                  {ticked && <Check className="size-3.5" strokeWidth={3} />}
+                                </span>
+                                <span className={cn('text-sm', ticked ? 'text-muted-foreground line-through decoration-muted-foreground/40' : 'text-foreground')}>{item.label}</span>
+                              </label>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </>
+                  )}
+                </section>
               );
             })}
-          </ul>
+          </div>
         </div>
 
         {/* Location + driver */}
@@ -285,7 +349,7 @@ function JobSheet({ job, staff, onComplete }: { job: JobTarget; staff: Staff[]; 
           </label>
           {hasDamage && (
             <textarea
-              placeholder="Describe the damage, where it is on the unit and any customer comments"
+              placeholder="Describe the damage, which unit, where it is and any customer comments"
               value={damageNotes}
               onChange={(e) => setDamageNotes(e.target.value)}
               className="min-h-20 w-full resize-none rounded-lg border border-input px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -308,7 +372,7 @@ function JobSheet({ job, staff, onComplete }: { job: JobTarget; staff: Staff[]; 
       <div className="space-y-2 border-t bg-white px-5 py-4">
         {missing.length > 0 && <p className="text-xs text-muted-foreground">Still needed: {missing.join(', ')}</p>}
         <div className="flex items-center gap-2">
-          <Link href={`/bookings/${booking.id}`} className="inline-flex h-10 items-center gap-1.5 rounded-md border px-3 text-sm font-medium hover:bg-muted">
+          <Link href={`/bookings/${site.groupId ?? site.id}`} className="inline-flex h-10 items-center gap-1.5 rounded-md border px-3 text-sm font-medium hover:bg-muted">
             Booking <ArrowUpRight className="size-4" />
           </Link>
           <Button
@@ -317,19 +381,10 @@ function JobSheet({ job, staff, onComplete }: { job: JobTarget; staff: Staff[]; 
             className={cn('h-10 flex-1 text-sm font-semibold', isDelivery ? 'hover:bg-[var(--brand-red-dark)]' : 'bg-emerald-600 hover:bg-emerald-700')}
           >
             <CircleCheck />
-            {isPending ? 'Confirming…' : isDelivery ? 'Confirm delivery' : 'Confirm collection'}
+            {isPending ? 'Confirming…' : `Confirm ${isDelivery ? 'delivery' : 'collection'}${active.length > 1 ? ` (${active.length} units)` : ''}`}
           </Button>
         </div>
       </div>
     </>
-  );
-}
-
-function Spec({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="px-3 py-2.5">
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className="tabular text-sm font-semibold text-foreground">{value}</div>
-    </div>
   );
 }

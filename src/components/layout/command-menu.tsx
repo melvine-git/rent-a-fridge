@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import { Box, CalendarDays, CalendarPlus, CornerDownLeft, Search, Users, type LucideIcon } from 'lucide-react';
+import { Box, CalendarDays, CalendarPlus, CornerDownLeft, Cpu, Search, Users, Wrench, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ShellData } from '@/types';
 
@@ -21,7 +21,15 @@ const TYPE_META = {
   customer: { group: 'Customers', icon: Users },
   unit: { group: 'Units', icon: Box },
   booking: { group: 'Bookings', icon: CalendarDays },
+  component: { group: 'Components', icon: Cpu },
+  service: { group: 'Service records', icon: Wrench },
 } as const;
+
+/** Every word of the query must appear somewhere in the entry (any order). */
+function matches(e: ShellData['searchIndex'][number], words: string[]) {
+  const text = `${e.label} ${e.sublabel} ${e.id} ${e.keywords ?? ''}`.toLowerCase();
+  return words.every((w) => text.includes(w));
+}
 
 export function CommandMenu({
   open,
@@ -40,11 +48,14 @@ export function CommandMenu({
   const items = useMemo<Item[]>(() => {
     const q = query.trim().toLowerCase();
     if (!q) return ACTIONS;
-    const matches = index
-      .filter((e) => `${e.label} ${e.sublabel} ${e.id}`.toLowerCase().includes(q))
-      .slice(0, 12)
+    const words = q.split(/\s+/);
+    const order = Object.keys(TYPE_META);
+    const found = index
+      .filter((e) => matches(e, words))
+      .sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type))
+      .slice(0, 30)
       .map((e) => ({ key: `${e.type}-${e.id}`, group: TYPE_META[e.type].group, label: e.label, sublabel: e.sublabel, href: e.href, icon: TYPE_META[e.type].icon }));
-    return [...matches, ...ACTIONS.filter((a) => a.label.toLowerCase().includes(q))];
+    return [...found, ...ACTIONS.filter((a) => a.label.toLowerCase().includes(q))];
   }, [query, index]);
 
   const updateQuery = (q: string) => {
@@ -90,7 +101,7 @@ export function CommandMenu({
             value={query}
             onChange={(e) => updateQuery(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Search customers, units, bookings…"
+            placeholder="Search customers, units, bookings, components, order numbers…"
             className="h-12 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
           <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">ESC</kbd>

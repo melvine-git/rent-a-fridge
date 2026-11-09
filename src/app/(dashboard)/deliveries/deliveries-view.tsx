@@ -4,16 +4,17 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Pill } from '@/components/ui/status-badge';
-import { KpiCard } from '@/components/app/kpi-card';
+import { KpiDrilldown } from '@/components/app/kpi-drilldown';
 import { Panel } from '@/components/app/panel';
 import { EmptyState } from '@/components/app/empty-state';
 import { UnitTypeIcon, UnitCode } from '@/components/app/unit-type-icon';
-import { JobDrawer, type JobTarget, type JobType } from '@/components/jobs/job-drawer';
-import { UNIT_SIZE_LABELS } from '@/lib/domain';
+import { JobDrawer, accessoryItems, type JobTarget, type JobType } from '@/components/jobs/job-drawer';
+import { powerShort } from '@/lib/domain';
+import { bookingRef, groupVisits, visitOf } from '@/lib/jobs';
 import { daysFromToday, formatDate, formatDayDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { Booking, Customer, Unit, Staff, DeliveryDocket, BookingWithDetails } from '@/types';
-import { CalendarClock, CircleCheck, Clock, MapPin, PackageCheck, PenLine, Thermometer, Truck, Zap, Box } from 'lucide-react';
+import type { Booking, Customer, Unit, Staff, DeliveryDocket, BookingWithDetails, DeliveryChecklist } from '@/types';
+import { CalendarClock, CircleCheck, Clock, MapPin, Package, PackageCheck, PenLine, Thermometer, Truck, Zap, Box } from 'lucide-react';
 
 type JobWithDetails = BookingWithDetails;
 type DocketWithDetails = DeliveryDocket & { booking: Booking; customer: Customer; unit: Unit; staff: Staff };
@@ -27,6 +28,9 @@ interface DeliveriesViewProps {
   allDockets: DocketWithDetails[];
   upcomingDockets: DocketWithDetails[];
 }
+
+const byStart = (b: Booking) => b.startDate;
+const byEnd = (b: Booking) => b.endDate;
 
 export function DeliveriesView({
   tomorrowDeliveries,
@@ -52,26 +56,57 @@ export function DeliveriesView({
     .filter((d) => d.status === 'COMPLETED')
     .sort((a, b) => (b.completedAt ?? b.scheduledDate).localeCompare(a.completedAt ?? a.scheduledDate));
   const dueIds = new Set(collectionsDue.map((c) => c.id));
-  const byTime = (a: JobWithDetails, b: JobWithDetails, key: 'deliveryTime' | 'collectionTime') =>
-    (a[key] ?? '99').localeCompare(b[key] ?? '99');
+  const delivered: Record<string, DeliveryChecklist | undefined> = Object.fromEntries(
+    allDockets.filter((d) => d.type === 'DELIVERY' && d.status === 'COMPLETED').map((d) => [d.bookingId, d.checklist])
+  );
+  const byTime = (a: JobWithDetails[], b: JobWithDetails[], key: 'deliveryTime' | 'collectionTime') => (a[0][key] ?? '99').localeCompare(b[0][key] ?? '99');
 
-  const open = (booking: JobWithDetails, type: JobType) =>
-    setJob({ booking, type, deliveredChecklist: allDockets.find((d) => d.id === booking.deliveryDocketId)?.checklist });
+  const open = (bookings: JobWithDetails[], type: JobType) => setJob({ bookings, type, delivered });
+
+  const visitItems = (list: JobWithDetails[], date: (b: Booking) => string) =>
+    groupVisits(list, date).map((g) => ({
+      key: g[0].id,
+      href: `/bookings/${bookingRef(g[0])}`,
+      title: g[0].customer.name,
+      subtitle: `${g.map((b) => b.unit.id).join(', ')} · ${g[0].deliveryAddress}`,
+      meta: formatDate(date(g[0])),
+    }));
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
-        <KpiCard label="Deliveries today" value={todayDeliveries.length} icon={Truck} tone="scheduled" />
-        <KpiCard label="Deliveries tomorrow" value={tomorrowDeliveries.length} icon={CalendarClock} tone="neutral" />
-        <KpiCard
-          label="Collections due"
-          value={collectionsDue.length}
-          icon={PackageCheck}
-          tone={collectionsDue.length ? 'danger' : 'neutral'}
-          emphasis={collectionsDue.length > 0}
-        />
-        <KpiCard label="Units on hire" value={activeHires.length} icon={Box} tone="info" />
-      </div>
+      <KpiDrilldown
+        cards={[
+          { key: 'today', label: 'Deliveries today', icon: Truck, tone: 'scheduled', items: visitItems(todayDeliveries, byStart), emptyText: 'No deliveries today' },
+          { key: 'tomorrow', label: 'Deliveries tomorrow', icon: CalendarClock, tone: 'neutral', items: visitItems(tomorrowDeliveries, byStart), emptyText: 'Nothing scheduled for tomorrow' },
+          {
+            key: 'due',
+            label: 'Collections due',
+            icon: PackageCheck,
+            tone: collectionsDue.length ? 'danger' : 'neutral',
+            emphasis: collectionsDue.length > 0,
+            items: visitItems(collectionsDue, byEnd),
+            emptyText: 'No collections due',
+          },
+          {
+            key: 'hire',
+            label: 'Units on hire',
+            icon: Box,
+            tone: 'info',
+            items: activeHires.map((h) => ({
+              key: h.id,
+              href: `/bookings/${bookingRef(h)}`,
+              title: (
+                <span className="flex items-center gap-2">
+                  <UnitCode id={h.unit.id} /> {h.customer.name}
+                </span>
+              ),
+              subtitle: h.deliveryAddress,
+              meta: `Back ${formatDate(h.endDate)}`,
+            })),
+            emptyText: 'No units on hire',
+          },
+        ]}
+      />
 
       {/* Board */}
       <div className="grid gap-4 lg:grid-cols-3">
@@ -79,7 +114,7 @@ export function DeliveriesView({
           title="Today"
           subtitle={formatDayDate(todayDate)}
           accent="bg-violet-500"
-          jobs={[...todayDeliveries].sort((a, b) => byTime(a, b, 'deliveryTime'))}
+          visits={groupVisits(todayDeliveries, byStart).sort((a, b) => byTime(a, b, 'deliveryTime'))}
           type="delivery"
           onOpen={open}
           emptyText="No deliveries today"
@@ -88,7 +123,7 @@ export function DeliveriesView({
           title="Tomorrow"
           subtitle={formatDayDate(tomorrowDate)}
           accent="bg-stone-400"
-          jobs={[...tomorrowDeliveries].sort((a, b) => byTime(a, b, 'deliveryTime'))}
+          visits={groupVisits(tomorrowDeliveries, byStart).sort((a, b) => byTime(a, b, 'deliveryTime'))}
           type="delivery"
           onOpen={open}
           emptyText="Nothing scheduled for tomorrow"
@@ -97,8 +132,9 @@ export function DeliveriesView({
           title="Collections due"
           subtitle="Hire period ended"
           accent="bg-red-500"
-          jobs={[...collectionsDue].sort((a, b) => a.endDate.localeCompare(b.endDate))}
+          visits={groupVisits(collectionsDue, byEnd).sort((a, b) => a[0].endDate.localeCompare(b[0].endDate))}
           type="collection"
+          delivered={delivered}
           onOpen={open}
           emptyText="No collections due"
         />
@@ -126,7 +162,7 @@ export function DeliveriesView({
                     .map((h) => {
                       const d = daysFromToday(h.endDate);
                       return (
-                        <tr key={h.id} className="hover:bg-muted/40">
+                        <tr key={h.id} className="cursor-pointer hover:bg-muted/40" onClick={() => router.push(`/bookings/${bookingRef(h)}`)}>
                           <td className="px-4 py-2.5">
                             <span className="flex items-center gap-2">
                               <UnitTypeIcon type={h.unit.unitType} />
@@ -142,7 +178,14 @@ export function DeliveriesView({
                             )}
                           </td>
                           <td className="px-4 py-2.5 text-right">
-                            <Button variant="outline" size="sm" onClick={() => open(h, 'collection')}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                open(visitOf(h, activeHires, byEnd), 'collection');
+                              }}
+                            >
                               Collect
                             </Button>
                           </td>
@@ -162,7 +205,7 @@ export function DeliveriesView({
                 {comingUp.slice(0, 6).map((d) => (
                   <li key={d.id}>
                     <button
-                      onClick={() => open({ ...d.booking, customer: d.customer, unit: d.unit }, 'delivery')}
+                      onClick={() => open([{ ...d.booking, customer: d.customer, unit: d.unit }], 'delivery')}
                       className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/40"
                     >
                       <Truck className="size-4 shrink-0 text-muted-foreground" />
@@ -239,17 +282,19 @@ function BoardColumn({
   title,
   subtitle,
   accent,
-  jobs,
+  visits,
   type,
+  delivered,
   onOpen,
   emptyText,
 }: {
   title: string;
   subtitle: string;
   accent: string;
-  jobs: JobWithDetails[];
+  visits: JobWithDetails[][];
   type: JobType;
-  onOpen: (job: JobWithDetails, type: JobType) => void;
+  delivered?: Record<string, DeliveryChecklist | undefined>;
+  onOpen: (jobs: JobWithDetails[], type: JobType) => void;
   emptyText: string;
 }) {
   return (
@@ -257,39 +302,53 @@ function BoardColumn({
       <header className="flex items-center gap-2 px-4 py-3">
         <span className={cn('size-2 rounded-full', accent)} />
         <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-        <span className="tabular rounded bg-white px-1.5 py-0.5 text-xs font-medium text-muted-foreground ring-1 ring-border">{jobs.length}</span>
+        <span className="tabular rounded bg-white px-1.5 py-0.5 text-xs font-medium text-muted-foreground ring-1 ring-border">{visits.length}</span>
         <span className="ml-auto text-xs text-muted-foreground">{subtitle}</span>
       </header>
       <div className="flex-1 space-y-2 px-2 pb-2">
-        {jobs.length === 0 ? (
+        {visits.length === 0 ? (
           <div className="flex h-28 items-center justify-center rounded-md border border-dashed bg-white/60 text-sm text-muted-foreground">
             {emptyText}
           </div>
         ) : (
-          jobs.map((j, i) => <JobCard key={j.id} job={j} type={type} index={i + 1} onClick={() => onOpen(j, type)} />)
+          visits.map((v, i) => <JobCard key={v[0].id} visit={v} type={type} delivered={delivered} index={i + 1} onClick={() => onOpen(v, type)} />)
         )}
       </div>
     </section>
   );
 }
 
-function JobCard({ job, type, index, onClick }: { job: JobWithDetails; type: JobType; index: number; onClick: () => void }) {
+function JobCard({
+  visit,
+  type,
+  delivered,
+  index,
+  onClick,
+}: {
+  visit: JobWithDetails[];
+  type: JobType;
+  delivered?: Record<string, DeliveryChecklist | undefined>;
+  index: number;
+  onClick: () => void;
+}) {
+  const job = visit[0];
   const time = type === 'delivery' ? job.deliveryTime : job.collectionTime;
   const overdue = type === 'collection' ? -daysFromToday(job.endDate) : 0;
+  const temps = [...new Set(visit.map((b) => `${b.tempRequired}°C`))].join(' / ');
+  const items = visit.flatMap((b) => accessoryItems(b, type === 'collection' ? delivered?.[b.id] : undefined).map((i) => (visit.length > 1 ? `${b.unit.id}: ${i}` : i)));
   return (
     <button
       onClick={onClick}
       className="group block w-full rounded-md border bg-white p-3 text-left shadow-[var(--shadow-xs)] transition-shadow outline-none hover:shadow-[var(--shadow-md)] focus-visible:ring-2 focus-visible:ring-ring/40"
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="tabular flex size-5 items-center justify-center rounded bg-foreground text-[10px] font-semibold text-background">
-            {index}
-          </span>
-          <UnitCode id={job.unit.id} />
-          <span className="text-xs text-muted-foreground">{UNIT_SIZE_LABELS[job.unit.size]}</span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="tabular flex size-5 items-center justify-center rounded bg-foreground text-[10px] font-semibold text-background">{index}</span>
+          {visit.map((b) => (
+            <UnitCode key={b.id} id={b.unit.id} />
+          ))}
         </div>
-        <span className="tabular flex items-center gap-1 text-xs font-medium text-foreground">
+        <span className="tabular flex shrink-0 items-center gap-1 text-xs font-medium text-foreground">
           <Clock className="size-3 text-muted-foreground" />
           {time ?? 'Any time'}
         </span>
@@ -302,9 +361,8 @@ function JobCard({ job, type, index, onClick }: { job: JobWithDetails; type: Job
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
         {type === 'delivery' ? (
           <>
-            <Tag icon={<Thermometer className="size-3" />}>{job.tempRequired}°C</Tag>
-            <Tag icon={<Zap className="size-3" />}>{job.powerAvailable === 'INDUSTRIAL' ? '32A' : '13A'}</Tag>
-            {job.cableLength && <Tag>{job.cableLength} cable</Tag>}
+            <Tag icon={<Thermometer className="size-3" />}>{temps}</Tag>
+            <Tag icon={<Zap className="size-3" />}>{powerShort(job)}</Tag>
           </>
         ) : overdue > 0 ? (
           <Pill tone="danger">{overdue}d overdue</Pill>
@@ -312,6 +370,15 @@ function JobCard({ job, type, index, onClick }: { job: JobWithDetails; type: Job
           <Pill tone="warning">Due today</Pill>
         )}
       </div>
+      {items.length > 0 && (
+        <div className="mt-2 flex items-start gap-1.5 border-t pt-2 text-[11px] text-amber-800">
+          <Package className="mt-px size-3 shrink-0" />
+          <span>
+            <span className="font-semibold">{type === 'delivery' ? 'Load: ' : 'Bring back: '}</span>
+            {items.join(' · ')}
+          </span>
+        </div>
+      )}
     </button>
   );
 }
@@ -324,4 +391,3 @@ function Tag({ icon, children }: { icon?: React.ReactNode; children: React.React
     </span>
   );
 }
-

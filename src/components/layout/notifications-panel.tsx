@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { EmptyState } from '@/components/app/empty-state';
-import { BellOff, CircleAlert, PackageCheck, Wrench } from 'lucide-react';
+import { BellOff, CircleAlert, PackageCheck, TriangleAlert, Wrench } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDate, formatRelativeDay } from '@/lib/format';
 import type { AppNotification } from '@/types';
@@ -12,6 +12,7 @@ const KIND_META: Record<AppNotification['kind'], { icon: typeof CircleAlert; cla
   ACTION_OVERDUE: { icon: CircleAlert, className: 'bg-red-50 text-red-600', label: 'Action overdue' },
   COLLECTION_OVERDUE: { icon: PackageCheck, className: 'bg-amber-50 text-amber-700', label: 'Collection' },
   SERVICE_DUE: { icon: Wrench, className: 'bg-stone-100 text-stone-600', label: 'Service' },
+  BREAKDOWN: { icon: TriangleAlert, className: 'bg-red-50 text-red-600', label: 'Breakdown' },
 };
 
 export function NotificationsPanel({

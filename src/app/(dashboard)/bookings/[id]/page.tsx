@@ -5,92 +5,100 @@ import { PageHeader } from '@/components/app/page-header';
 import { Panel } from '@/components/app/panel';
 import { DetailItem, DetailList, StatStrip, Timeline, type TimelineStep } from '@/components/app/detail';
 import { Avatar } from '@/components/app/avatar';
-import { UnitTypeIcon } from '@/components/app/unit-type-icon';
 import { StatusBadge, Pill } from '@/components/ui/status-badge';
+import { QuoteTotals } from '@/components/bookings/booking-editors';
 import { BookingActions } from './booking-actions';
-import { POWER_LABELS, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS } from '@/lib/domain';
-import { daysBetween, daysFromToday, formatDate, formatDayDate, formatPhone, w3wUrl } from '@/lib/format';
-import { cn } from '@/lib/utils';
-import { Ban, Check, Minus, Navigation, Phone, ArrowUpRight, CircleAlert, ExternalLink } from 'lucide-react';
-import type { DeliveryDocket } from '@/types';
+import { BookingUnits } from './booking-units';
+import { GBP, lineCharge, powerLabel, quoteTotals } from '@/lib/domain';
+import { daysFromToday, formatDate, formatPhone, w3wUrl } from '@/lib/format';
+import { Ban, Navigation, Phone, ArrowUpRight, CircleAlert, ExternalLink } from 'lucide-react';
+import type { BookingStatus, DeliveryDocket } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
-const ACCESSORIES = [
-  { key: 'hitchLock', label: 'Hitch lock' },
-  { key: 'wheelClamp', label: 'Wheel clamp' },
-  { key: 'doorLock', label: 'Door lock' },
-  { key: 'tempRecorder', label: 'Temperature recorder' },
-] as const;
+/** One status for the whole booking, from its unit lines. */
+function groupStatus(statuses: BookingStatus[]): BookingStatus {
+  if (statuses.some((s) => s === 'ON_HIRE')) return 'ON_HIRE';
+  if (statuses.some((s) => s === 'CONFIRMED')) return 'CONFIRMED';
+  if (statuses.every((s) => s === 'CANCELLED')) return 'CANCELLED';
+  return 'COLLECTED';
+}
 
 export default async function BookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const data = await getBookingDetail(id);
   if (!data) notFound();
-  const { booking, delivery, collection, staff, allStaff, units } = data;
-  const { customer, unit } = booking;
+  const { booking, lines, reference, staff, allStaff, units } = data;
+  const { customer } = booking;
 
-  const days = daysBetween(booking.startDate, booking.endDate);
-  const untilEnd = daysFromToday(booking.endDate);
-  const untilStart = daysFromToday(booking.startDate);
-  const isActive = booking.status === 'CONFIRMED' || booking.status === 'ON_HIRE';
+  const live = lines.filter((l) => l.status !== 'CANCELLED');
+  const status = groupStatus(lines.map((l) => l.status));
+  const cancelled = status === 'CANCELLED';
+  const isActive = status === 'CONFIRMED' || status === 'ON_HIRE';
+  const dates = (live.length ? live : lines).flatMap((l) => [l.startDate, l.endDate]).sort();
+  const firstDate = dates[0];
+  const lastDate = dates.at(-1)!;
   const actionOverdue = booking.actionDate && isActive && daysFromToday(booking.actionDate) <= 0;
-  const cancelled = booking.status === 'CANCELLED';
-  const deliveryDone = delivery?.status === 'COMPLETED' ? delivery : undefined;
-  const collectionDone = collection?.status === 'COMPLETED' ? collection : undefined;
+  const delivered = live.filter((l) => l.status === 'ON_HIRE' || l.status === 'COLLECTED').length;
+  const collected = live.filter((l) => l.status === 'COLLECTED').length;
+  const totals = quoteTotals(lines, booking.quote);
+  const priced = live.some((l) => l.rate !== undefined) || (booking.quote?.extras.length ?? 0) > 0;
+
+  const nextDelivery = live.filter((l) => l.status === 'CONFIRMED').map((l) => l.startDate).sort()[0];
+  const nextCollection = live.filter((l) => l.status === 'ON_HIRE').map((l) => l.endDate).sort()[0];
+  const until = (d: string) => daysFromToday(d);
+  const timing = cancelled
+    ? `Cancelled${booking.cancelledAt ? ` on ${formatDate(booking.cancelledAt.split('T')[0], { year: true })}` : ''}`
+    : nextDelivery
+      ? until(nextDelivery) > 0
+        ? `Delivery in ${until(nextDelivery)} day${until(nextDelivery) > 1 ? 's' : ''}`
+        : until(nextDelivery) === 0
+          ? 'Delivery today'
+          : 'Delivery overdue'
+      : nextCollection
+        ? until(nextCollection) > 0
+          ? `${until(nextCollection)} day${until(nextCollection) > 1 ? 's' : ''} until collection`
+          : until(nextCollection) === 0
+            ? 'Collection due today'
+            : `Collection ${-until(nextCollection)}d overdue`
+        : 'Hire complete';
 
   const steps: TimelineStep[] = cancelled
     ? [
         { label: 'Booked', detail: formatDate(booking.createdAt, { year: true }), state: 'done' },
-        { label: 'Cancelled', detail: booking.cancelledAt ? formatDate(booking.cancelledAt.split('T')[0], { year: true }) : undefined, state: 'current' },
+        { label: 'Cancelled', detail: booking.cancellationReason, state: 'current' },
       ]
     : [
         { label: 'Booked', detail: formatDate(booking.createdAt, { year: true }), state: 'done' },
         {
           label: 'Delivered',
-          detail: deliveryDone?.completedAt
-            ? `${formatDate(deliveryDone.completedAt.split('T')[0])} · ${staff[deliveryDone.staffId] ?? ''}${deliveryDone.signedBy ? ` · signed by ${deliveryDone.signedBy}` : ''}`
-            : `Scheduled ${formatDayDate(booking.startDate)}${booking.deliveryTime ? ` at ${booking.deliveryTime}` : ''}`,
-          state: booking.status === 'CONFIRMED' ? 'current' : 'done',
+          detail: live.length > 1 ? `${delivered} of ${live.length} units` : delivered ? 'Unit delivered' : `Scheduled ${formatDate(firstDate)}`,
+          state: delivered === live.length ? 'done' : delivered > 0 || status === 'CONFIRMED' ? 'current' : 'upcoming',
         },
         {
           label: 'Collected',
-          detail: collectionDone?.completedAt
-            ? `${formatDate(collectionDone.completedAt.split('T')[0])}${collectionDone.signedBy ? ` · signed by ${collectionDone.signedBy}` : ''}`
-            : `Due ${formatDayDate(booking.endDate)}${booking.collectionTime ? ` at ${booking.collectionTime}` : ''}`,
-          state: booking.status === 'COLLECTED' ? 'done' : booking.status === 'ON_HIRE' ? 'current' : 'upcoming',
+          detail: live.length > 1 ? `${collected} of ${live.length} units` : collected ? 'Unit collected' : `Due ${formatDate(lastDate)}`,
+          state: collected === live.length ? 'done' : delivered > 0 ? 'current' : 'upcoming',
         },
       ];
 
-  const timing = cancelled
-    ? `Cancelled${booking.cancelledAt ? ` on ${formatDate(booking.cancelledAt.split('T')[0], { year: true })}` : ''}`
-    : booking.status === 'CONFIRMED'
-      ? untilStart > 0
-        ? `Delivery in ${untilStart} day${untilStart > 1 ? 's' : ''}`
-        : untilStart === 0
-          ? 'Delivery today'
-          : 'Delivery overdue'
-      : booking.status === 'ON_HIRE'
-        ? untilEnd > 0
-          ? `${untilEnd} day${untilEnd > 1 ? 's' : ''} remaining`
-          : untilEnd === 0
-            ? 'Collection due today'
-            : `Collection ${-untilEnd}d overdue`
-        : 'Hire complete';
+  const proofs = lines
+    .flatMap((l) => [l.delivery, l.collection].filter((d): d is DeliveryDocket => d?.status === 'COMPLETED').map((d) => ({ line: l, docket: d })))
+    .sort((a, b) => (a.docket.completedAt ?? '').localeCompare(b.docket.completedAt ?? ''));
 
   return (
     <div className="space-y-6">
       <PageHeader
-        breadcrumbs={[{ label: 'Bookings', href: '/bookings' }, { label: booking.id }]}
+        breadcrumbs={[{ label: 'Bookings', href: '/bookings' }, { label: reference }]}
         title={customer.name}
         meta={
           <>
-            <StatusBadge status={booking.status} />
-            <span className="font-mono-unit text-xs text-muted-foreground">{booking.id}</span>
+            <StatusBadge status={status} />
+            <span className="font-mono-unit text-xs text-muted-foreground">{reference}</span>
           </>
         }
         description={timing}
-        actions={<BookingActions booking={booking} staff={allStaff} units={units} deliveredChecklist={deliveryDone?.checklist} />}
+        actions={<BookingActions reference={reference} lines={lines} staff={allStaff} units={units} />}
       />
 
       {cancelled && (
@@ -115,15 +123,17 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
 
       <StatStrip
         items={[
-          { label: 'Hire period', value: `${formatDate(booking.startDate)} – ${formatDate(booking.endDate)}`, sub: `${days} days` },
-          { label: 'Unit', value: <span className="font-mono-unit">{unit.id}</span>, sub: UNIT_TYPE_LABELS[unit.unitType] },
-          { label: 'Temperature', value: `${booking.tempRequired}°C`, sub: booking.application || 'Application not specified' },
-          { label: 'Power', value: booking.powerAvailable === 'INDUSTRIAL' ? '32A industrial' : '13A standard', sub: booking.cableLength ? `${booking.cableLength} cable` : 'No cable specified' },
+          { label: 'Hire period', value: `${formatDate(firstDate)} – ${formatDate(lastDate)}`, sub: live.length > 1 ? 'Across all units' : undefined },
+          { label: live.length === 1 ? 'Unit' : 'Units', value: live.length, sub: <span className="font-mono-unit">{live.map((l) => l.unit.id).join(', ') || '—'}</span> },
+          { label: 'Site power', value: powerLabel(booking), sub: booking.application || 'Application not specified' },
+          { label: 'Quoted total', value: priced ? GBP.format(totals.total) : 'Not priced', sub: priced ? `inc. VAT · ${GBP.format(totals.net)} net` : 'Add rates under Edit' },
         ]}
       />
 
       <div className="grid gap-4 lg:grid-cols-3 lg:gap-6">
         <div className="space-y-4 lg:col-span-2 lg:space-y-6">
+          <BookingUnits lines={lines} staff={allStaff} />
+
           <Panel
             title="Site & contact"
             action={
@@ -154,19 +164,13 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
                 )}
               </DetailItem>
               <DetailItem label="Site contact">{booking.contactName}</DetailItem>
-              <DetailItem label="Contact phone">
+              <DetailItem label="Site contact phone">
                 <a href={`tel:${booking.contactPhone}`} className="tabular hover:underline">
                   {formatPhone(booking.contactPhone)}
                 </a>
               </DetailItem>
-              <DetailItem label="Delivery">
-                {formatDayDate(booking.startDate)}
-                {booking.deliveryTime && <span className="text-muted-foreground"> · {booking.deliveryTime}</span>}
-              </DetailItem>
-              <DetailItem label="Collection">
-                {formatDayDate(booking.endDate)}
-                {booking.collectionTime && <span className="text-muted-foreground"> · {booking.collectionTime}</span>}
-              </DetailItem>
+              <DetailItem label="Site power">{powerLabel(booking)}</DetailItem>
+              <DetailItem label="Application">{booking.application || <span className="text-muted-foreground">Not specified</span>}</DetailItem>
               {booking.accessInstructions && (
                 <DetailItem label="Access instructions" full>
                   <span className="block rounded-md bg-amber-50 px-3 py-2 text-amber-900 ring-1 ring-amber-600/15 ring-inset">{booking.accessInstructions}</span>
@@ -175,41 +179,70 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
             </DetailList>
           </Panel>
 
-          <Panel title="Requirements">
-            <DetailList cols={2}>
-              <DetailItem label="Temperature">{booking.tempRequired}°C</DetailItem>
-              <DetailItem label="Power available">{POWER_LABELS[booking.powerAvailable]}</DetailItem>
-              <DetailItem label="Cable length">{booking.cableLength}</DetailItem>
-              <DetailItem label="Application">{booking.application}</DetailItem>
-            </DetailList>
-            <div className="border-t p-4">
-              <div className="mb-2 text-xs font-medium text-muted-foreground">Accessories</div>
-              <ul className="grid gap-2 sm:grid-cols-2">
-                {ACCESSORIES.map(({ key, label }) => {
-                  const on = !!booking.accessories?.[key];
-                  return (
-                    <li key={key} className={cn('flex items-center gap-2 text-sm', on ? 'text-foreground' : 'text-muted-foreground')}>
-                      <span
-                        className={cn(
-                          'flex size-5 items-center justify-center rounded',
-                          on ? 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-600/20' : 'bg-muted text-muted-foreground/60'
-                        )}
-                      >
-                        {on ? <Check className="size-3.5" strokeWidth={3} /> : <Minus className="size-3.5" />}
-                      </span>
-                      {label}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
+          <Panel title="Quote" description={booking.quote?.poNumber ? `Customer PO ${booking.quote.poNumber}` : 'Prices ex VAT'}>
+            {priced ? (
+              <div className="space-y-4 p-4">
+                <div className="overflow-x-auto rounded-md border">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+                        <th className="px-3 py-2 font-medium">Item</th>
+                        <th className="px-3 py-2 text-right font-medium">Qty</th>
+                        <th className="px-3 py-2 text-right font-medium">Price</th>
+                        <th className="px-3 py-2 text-right font-medium">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {live.map((l) => {
+                        const c = lineCharge(l);
+                        return (
+                          <tr key={l.id}>
+                            <td className="px-3 py-2 text-foreground">
+                              Hire of <span className="font-mono-unit">{l.unit.id}</span>
+                              <span className="ml-2 text-xs text-muted-foreground">
+                                {formatDate(l.startDate)} – {formatDate(l.endDate)}
+                              </span>
+                            </td>
+                            <td className="tabular px-3 py-2 text-right text-muted-foreground">
+                              {c.qty} {c.unit}
+                            </td>
+                            <td className="tabular px-3 py-2 text-right text-muted-foreground">{l.rate !== undefined ? GBP.format(l.rate) : '—'}</td>
+                            <td className="tabular px-3 py-2 text-right text-foreground">{GBP.format(c.amount)}</td>
+                          </tr>
+                        );
+                      })}
+                      {booking.quote?.extras.map((e) => (
+                        <tr key={e.id}>
+                          <td className="px-3 py-2 text-foreground">{e.description}</td>
+                          <td className="tabular px-3 py-2 text-right text-muted-foreground">{e.quantity}</td>
+                          <td className="tabular px-3 py-2 text-right text-muted-foreground">{GBP.format(e.unitPrice)}</td>
+                          <td className="tabular px-3 py-2 text-right text-foreground">{GBP.format(e.quantity * e.unitPrice)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <p className="text-xs text-muted-foreground sm:max-w-xs">
+                    {customer.xeroContactId ? 'Ready to raise as an invoice in Xero for this customer.' : 'Link this customer to Xero (customer page) before raising the invoice.'}
+                  </p>
+                  <div className="sm:w-64">
+                    <QuoteTotals totals={totals} />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="p-4 text-sm text-muted-foreground">No prices yet. Use Edit to add a rate for each unit and any extra charges.</p>
+            )}
           </Panel>
 
-          {(deliveryDone || collectionDone) && (
+          {proofs.length > 0 && (
             <Panel title="Proof of delivery & collection" description="Signed records captured on site">
-              <div className="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0">
-                <JobRecord title="Delivery" docket={deliveryDone} driver={deliveryDone && staff[deliveryDone.staffId]} />
-                <JobRecord title="Collection" docket={collectionDone} driver={collectionDone && staff[collectionDone.staffId]} />
+              <div className="grid gap-px bg-border sm:grid-cols-2">
+                {proofs.map(({ line, docket }) => (
+                  <JobRecord key={docket.id} title={`${docket.type === 'DELIVERY' ? 'Delivery' : 'Collection'} · ${line.unit.id}`} docket={docket} driver={staff[docket.staffId]} />
+                ))}
+                {proofs.length % 2 === 1 && <div className="hidden bg-white sm:block" />}
               </div>
             </Panel>
           )}
@@ -233,26 +266,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           </Panel>
 
           <Panel
-            title="Unit"
-            action={
-              <Link href={`/units/${unit.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
-                View <ArrowUpRight className="size-3.5" />
-              </Link>
-            }
-          >
-            <div className="flex items-center gap-3 p-4">
-              <UnitTypeIcon type={unit.unitType} boxed className="size-10" />
-              <div>
-                <div className="font-mono-unit text-base text-foreground">{unit.id}</div>
-                <div className="text-xs text-muted-foreground">
-                  {UNIT_TYPE_LABELS[unit.unitType]} · {UNIT_SIZE_LABELS[unit.size]} · {unit.powerType === 'INDUSTRIAL' ? '32A' : '13A'}
-                </div>
-              </div>
-            </div>
-          </Panel>
-
-          <Panel
-            title="Customer"
+            title="Invoice customer"
             action={
               <Link href={`/customers/${customer.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
                 View <ArrowUpRight className="size-3.5" />
@@ -279,7 +293,21 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
                   </a>
                 </DetailItem>
               )}
-              <DetailItem label="Invoice address">{customer.address}</DetailItem>
+              <DetailItem label="Invoice address">
+                {customer.invoiceAddress ? (
+                  <span className="block leading-relaxed">
+                    {[customer.invoiceAddress.line1, customer.invoiceAddress.line2, customer.invoiceAddress.town, customer.invoiceAddress.county, customer.invoiceAddress.postcode, customer.invoiceAddress.country]
+                      .filter(Boolean)
+                      .map((p) => (
+                        <span key={p} className="block">
+                          {p}
+                        </span>
+                      ))}
+                  </span>
+                ) : (
+                  customer.address
+                )}
+              </DetailItem>
             </DetailList>
           </Panel>
         </div>
@@ -288,18 +316,10 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   );
 }
 
-function JobRecord({ title, docket, driver }: { title: string; docket?: DeliveryDocket; driver?: string }) {
-  if (!docket) {
-    return (
-      <div className="p-4">
-        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</div>
-        <p className="mt-2 text-sm text-muted-foreground">Not yet completed</p>
-      </div>
-    );
-  }
+function JobRecord({ title, docket, driver }: { title: string; docket: DeliveryDocket; driver?: string }) {
   return (
-    <div className="space-y-3 p-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-3 bg-white p-4">
+      <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</span>
         <Pill tone="success">Completed</Pill>
       </div>
@@ -317,9 +337,7 @@ function JobRecord({ title, docket, driver }: { title: string; docket?: Delivery
         <div className="flex justify-between gap-3">
           <dt className="text-muted-foreground">When</dt>
           <dd className="tabular text-right text-foreground">
-            {docket.completedAt
-              ? new Date(docket.completedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-              : '—'}
+            {docket.completedAt ? new Date(docket.completedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
           </dd>
         </div>
         {driver && (

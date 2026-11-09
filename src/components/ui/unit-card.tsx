@@ -18,11 +18,6 @@ const sizeLabels = {
   LARGE: 'Large',
 } as const;
 
-const powerLabels = {
-  STANDARD: 'Standard Power',
-  INDUSTRIAL: 'Industrial Power',
-} as const;
-
 export function UnitCard({ unit, selected, onClick, className }: UnitCardProps) {
   return (
     <Card
@@ -42,8 +37,6 @@ export function UnitCard({ unit, selected, onClick, className }: UnitCardProps) 
       <CardContent className="space-y-2">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span className="font-medium">{sizeLabels[unit.size]}</span>
-          <span>•</span>
-          <span>{powerLabels[unit.powerType]}</span>
         </div>
         {unit.notes && (
           <p className="text-xs text-muted-foreground italic">{unit.notes}</p>

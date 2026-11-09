@@ -3,7 +3,9 @@
 export type UnitStatus = 'AVAILABLE' | 'ON_HIRE' | 'MAINTENANCE';
 export type BookingStatus = 'CONFIRMED' | 'ON_HIRE' | 'COLLECTED' | 'CANCELLED';
 export type UnitSize = 'SMALL' | 'MEDIUM' | 'LARGE';
-export type PowerType = 'STANDARD' | 'INDUSTRIAL';
+/** Site power supply. INDUSTRIAL is shown as 'Commando'; OTHER uses Booking.powerOther. */
+export type PowerType = 'STANDARD' | 'INDUSTRIAL' | 'OTHER';
+export type RatePeriod = 'DAY' | 'WEEK';
 export type UnitType = 'COLD_STORE' | 'UPRIGHT_FRIDGE' | 'CHEST_FREEZER';
 export type CableLength = '5m' | '10m' | '15m' | '20m' | '25m' | '30m';
 export type CalendarView = 'week' | 'month';
@@ -30,12 +32,22 @@ export interface CustomerPreferences {
   notes?: string;
 }
 
+export interface PostalAddress {
+  line1: string;
+  line2?: string;
+  town?: string;
+  county?: string;
+  postcode: string;
+  country: string;
+}
+
 export interface Customer {
   id: string;
   name: string;
   phone: string;
   email?: string;
-  address: string; // Default/primary invoice address
+  address: string; // Default/primary invoice address, formatted on one line
+  invoiceAddress?: PostalAddress; // Structured invoice address (source of `address` when set)
   addresses?: CustomerAddress[]; // Additional delivery addresses
   preferences?: CustomerPreferences;
   xeroContactId?: string; // Link to Xero accounting
@@ -59,7 +71,7 @@ export interface UnitSpecifications {
 
 export interface BOMComponent {
   id: string;
-  type: 'COMPRESSOR' | 'EVAPORATOR' | 'CONTROLLER' | 'FAN_MOTOR' | 'OTHER';
+  type: 'COMPRESSOR' | 'EVAPORATOR' | 'CONTROLLER' | 'FAN_MOTOR' | 'CONTACTOR' | 'OTHER';
   name: string;
   manufacturer?: string;
   model?: string;
@@ -75,15 +87,27 @@ export interface MaintenanceRecord {
   type: 'SCHEDULED' | 'REPAIR' | 'INSPECTION';
   description: string;
   performedBy: string;
+  /** Legacy: cost was replaced by order numbers */
   cost?: number;
+  orderNumbers?: string[];
+  hoursWorked?: number;
   partsReplaced?: string[];
   nextServiceDate?: string;
+  attachments?: Attachment[];
+}
+
+export interface Attachment {
+  name: string;
+  url: string;
+  size: number;
+  type: string;
 }
 
 export interface Unit {
   id: string;
   size: UnitSize;
-  powerType: PowerType;
+  /** Legacy: power is a cable chosen per booking, not a property of the unit */
+  powerType?: PowerType;
   unitType: UnitType; // cold store, upright fridge, chest freezer
   status: UnitStatus;
   currentBookingId?: string;
@@ -92,6 +116,10 @@ export interface Unit {
   bom?: BOMComponent[];
   maintenanceHistory?: MaintenanceRecord[];
   dataLoggerId?: string; // For data logger integration
+  /** Set when the unit has broken down; blocks new bookings until cleared. Can be set while on hire. */
+  breakdown?: { reportedAt: string; notes?: string };
+  /** Manually scheduled next service, overriding the date from the last service record */
+  nextServiceDate?: string;
   createdAt?: string;
 }
 
@@ -102,8 +130,29 @@ export interface BookingAccessories {
   tempRecorder: boolean;
 }
 
+export interface QuoteLine {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: number; // GBP, ex VAT
+}
+
+/** Booking-level pricing shared by every unit line of a booking. */
+export interface BookingQuote {
+  extras: QuoteLine[];
+  discount?: number; // GBP off the subtotal, ex VAT
+  vatRate: number; // percent, e.g. 20
+  poNumber?: string;
+}
+
+/**
+ * One unit on hire. A booking with several units is several Booking records sharing a
+ * groupId (the id of the first unit line); customer, site, contact and quote are kept
+ * identical across the group, while dates, status and jobs are per unit.
+ */
 export interface Booking {
   id: string;
+  groupId?: string;
   customerId: string;
   unitId: string;
   status: BookingStatus;
@@ -121,8 +170,12 @@ export interface Booking {
   accessInstructions?: string;
   tempRequired: number; // celsius
   powerAvailable: PowerType;
+  powerOther?: string; // Free text when powerAvailable is OTHER
   cableLength?: CableLength;
   accessories?: BookingAccessories;
+  rate?: number; // GBP ex VAT per ratePeriod for this unit
+  ratePeriod?: RatePeriod;
+  quote?: BookingQuote;
   application?: string; // e.g., "fish", "ice cream", "pizza dough"
   notes?: string; // Free-text notes
   createdAt: string; // YYYY-MM-DD
@@ -155,6 +208,7 @@ export interface DeliveryChecklist {
   hitchLockSecured: boolean;
   wheelClampSecured: boolean;
   doorLockSecured: boolean;
+  tempRecorderFitted?: boolean;
 }
 
 export interface DeliveryDocket {
@@ -186,30 +240,48 @@ export interface Database {
 }
 
 // Input types for actions
-export interface CreateBookingInput {
+
+/** Fields shared by every unit line of a booking. */
+export interface BookingSharedInput {
   customerId: string;
-  unitId: string;
-  startDate: string;
-  endDate: string;
-  deliveryTime?: string;
-  collectionTime?: string;
-  actionDate?: string;
-  actionDescription?: string;
   contactName: string;
   contactPhone: string;
   deliveryAddress: string;
   deliveryAddressId?: string;
   what3wordsAddress?: string;
   accessInstructions?: string;
-  tempRequired: number;
   powerAvailable: PowerType;
-  cableLength?: CableLength;
-  accessories?: BookingAccessories;
+  powerOther?: string;
   application?: string;
   notes?: string;
+  actionDate?: string;
+  actionDescription?: string;
+  quote?: BookingQuote;
 }
 
-export type UpdateBookingInput = Partial<Omit<CreateBookingInput, 'customerId'>>;
+/** Per-unit fields of a booking line. */
+export interface BookingLineInput {
+  unitId: string;
+  startDate: string;
+  endDate: string;
+  deliveryTime?: string;
+  collectionTime?: string;
+  tempRequired: number;
+  cableLength?: CableLength;
+  accessories?: BookingAccessories;
+  rate?: number;
+  ratePeriod?: RatePeriod;
+}
+
+export type CreateBookingInput = BookingSharedInput & { lines: BookingLineInput[] };
+
+/** Lines with an id update that unit line; lines without one are added to the booking. */
+export interface UpdateBookingGroupInput {
+  shared: Omit<BookingSharedInput, 'customerId'>;
+  lines: (BookingLineInput & { id?: string })[];
+  /** Not-yet-delivered unit lines to cancel (remove from the booking) */
+  cancelIds?: string[];
+}
 
 export interface MarkDeliveredInput {
   bookingId: string;
@@ -227,7 +299,6 @@ export type MarkCollectedInput = MarkDeliveredInput;
 
 export interface UnitSpec {
   size?: UnitSize;
-  powerType?: PowerType;
 }
 
 // View models for UI
@@ -235,7 +306,7 @@ export type BookingWithDetails = Booking & { customer: Customer; unit: Unit };
 
 export interface AppNotification {
   id: string;
-  kind: 'ACTION_OVERDUE' | 'COLLECTION_OVERDUE' | 'SERVICE_DUE';
+  kind: 'ACTION_OVERDUE' | 'COLLECTION_OVERDUE' | 'SERVICE_DUE' | 'BREAKDOWN';
   title: string;
   description: string;
   date: string;
@@ -245,7 +316,7 @@ export interface AppNotification {
 export interface ShellData {
   counts: { deliveriesToday: number; collectionsDue: number; actionsOverdue: number; serviceDue: number };
   notifications: AppNotification[];
-  searchIndex: { type: 'customer' | 'unit' | 'booking'; id: string; label: string; sublabel: string; href: string }[];
+  searchIndex: { type: 'customer' | 'unit' | 'booking' | 'component' | 'service'; id: string; label: string; sublabel: string; keywords?: string; href: string }[];
 }
 
 export type CustomerWithStats = Customer & {

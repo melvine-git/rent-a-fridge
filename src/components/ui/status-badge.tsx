@@ -1,8 +1,8 @@
 import { cn } from '@/lib/utils';
-import { STATUS_META, TONE_CLASSES, type Tone } from '@/lib/domain';
-import type { UnitStatus, BookingStatus } from '@/types';
+import { STATUS_META, TONE_CLASSES, type Tone, type UnitDisplayStatus } from '@/lib/domain';
+import type { BookingStatus } from '@/types';
 
-type StatusType = UnitStatus | BookingStatus;
+type StatusType = UnitDisplayStatus | BookingStatus;
 
 interface PillProps {
   tone: Tone;

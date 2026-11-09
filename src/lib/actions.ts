@@ -2,7 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import { readDb, writeDb } from './db';
-import { saveImage, deleteImage, IMAGE_TYPES, MAX_UPLOAD_BYTES } from './uploads';
+import { saveImage, saveFile, deleteImage, IMAGE_TYPES, MAX_UPLOAD_BYTES, DOCUMENT_TYPES, MAX_DOCUMENT_BYTES } from './uploads';
+import { formatAddress } from './format';
+import { nextServiceDate, COMPONENT_LABELS } from './domain';
 import type {
   Customer,
   CustomerAddress,
@@ -21,7 +23,6 @@ import type {
   UnitStatus,
   UnitType,
   UnitSize,
-  PowerType,
   BookingStatus,
   Staff,
   AppNotification,
@@ -29,14 +30,17 @@ import type {
   CustomerWithStats,
   ShellData,
   UnitWithHire,
-  UpdateBookingInput,
+  UpdateBookingGroupInput,
+  BookingSharedInput,
+  BookingLineInput,
   ServiceableComponent,
   Database,
 } from '@/types';
 
 // Helper to generate IDs
 function generateId(prefix: string): string {
-  return `${prefix}-${Date.now().toString(36)}`;
+  // Random suffix: several records (e.g. unit lines and their jobs) are created in the same millisecond
+  return `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
 
 // Helper to get today's date in YYYY-MM-DD
@@ -89,6 +93,7 @@ function unitConflict(db: Db, unitId: string, startDate: string, endDate: string
   const unit = db.units.find((u) => u.id === unitId);
   if (!unit) return 'Unit not found';
   if (unit.status === 'MAINTENANCE') return 'Unit is under maintenance';
+  if (unit.breakdown) return 'Unit is marked as broken down';
   const clash = db.bookings.some(
     (b) =>
       b.id !== ignoreBookingId &&
@@ -110,6 +115,7 @@ function ensureScheduledDocket(db: Db, booking: Booking, type: DeliveryDocket['t
     checklist.hitchLockSecured = delivery.checklist.hitchLockSecured;
     checklist.wheelClampSecured = delivery.checklist.wheelClampSecured;
     checklist.doorLockSecured = delivery.checklist.doorLockSecured;
+    checklist.tempRecorderFitted = delivery.checklist.tempRecorderFitted;
     checklist.cableLengthUsed = delivery.checklist.cableLengthUsed;
   }
   const docket: DeliveryDocket = {
@@ -175,16 +181,16 @@ function finaliseDocket(db: Db, docket: DeliveryDocket) {
   }
 }
 
-async function completeJob(type: DeliveryDocket['type'], input: MarkDeliveredInput): Promise<{ success: boolean; docket?: DeliveryDocket; error?: string }> {
-  const db = await readDb();
+/** Completes one unit's job in memory; returns an error message or the completed docket. */
+function applyJob(db: Db, type: DeliveryDocket['type'], input: MarkDeliveredInput): string | DeliveryDocket {
   const booking = db.bookings.find((b) => b.id === input.bookingId);
-  if (!booking) return { success: false, error: 'Booking not found' };
+  if (!booking) return 'Booking not found';
   const expected: BookingStatus = type === 'DELIVERY' ? 'CONFIRMED' : 'ON_HIRE';
   if (booking.status !== expected) {
-    return { success: false, error: type === 'DELIVERY' ? 'Booking is not awaiting delivery' : 'Booking is not on hire' };
+    return `${booking.unitId}: ${type === 'DELIVERY' ? 'not awaiting delivery' : 'not on hire'}`;
   }
-  if (!db.units.some((u) => u.id === booking.unitId)) return { success: false, error: 'Unit not found' };
-  if (!input.signedBy.trim()) return { success: false, error: 'Customer sign-off is required' };
+  if (!db.units.some((u) => u.id === booking.unitId)) return 'Unit not found';
+  if (!input.signedBy.trim()) return 'Customer sign-off is required';
 
   const docket = ensureScheduledDocket(db, booking, type);
   Object.assign(docket, {
@@ -198,12 +204,40 @@ async function completeJob(type: DeliveryDocket['type'], input: MarkDeliveredInp
     photoUrls: input.photoUrls,
   });
   finaliseDocket(db, docket);
+  return docket;
+}
+
+async function completeJob(type: DeliveryDocket['type'], input: MarkDeliveredInput): Promise<{ success: boolean; docket?: DeliveryDocket; error?: string }> {
+  const db = await readDb();
+  const result = applyJob(db, type, input);
+  if (typeof result === 'string') return { success: false, error: result };
   await writeDb(db);
   revalidatePath('/', 'layout');
-  return { success: true, docket };
+  return { success: true, docket: result };
+}
+
+/** Confirm a delivery or collection for several units of a booking at once (one signature). */
+export async function completeJobs(
+  type: DeliveryDocket['type'],
+  inputs: MarkDeliveredInput[]
+): Promise<{ success: boolean; error?: string }> {
+  if (inputs.length === 0) return { success: false, error: 'Choose at least one unit' };
+  const db = await readDb();
+  for (const input of inputs) {
+    const result = applyJob(db, type, input);
+    if (typeof result === 'string') return { success: false, error: result };
+  }
+  await writeDb(db);
+  revalidatePath('/', 'layout');
+  return { success: true };
 }
 
 // ============ CUSTOMER ACTIONS ============
+
+/** The one-line address is derived from the structured invoice address whenever one is given. */
+function withFormattedAddress<T extends Partial<Pick<Customer, 'address' | 'invoiceAddress'>>>(data: T): T {
+  return data.invoiceAddress ? { ...data, address: formatAddress(data.invoiceAddress) } : data;
+}
 
 export async function searchCustomers(query: string): Promise<Customer[]> {
   const db = await readDb();
@@ -232,7 +266,7 @@ export async function addCustomer(
   const db = await readDb();
   const customer: Customer = {
     id: generateId('cust'),
-    ...data,
+    ...withFormattedAddress(data),
     createdAt: today(),
   };
   db.customers.push(customer);
@@ -310,7 +344,7 @@ export async function updateCustomer(
   
   db.customers[index] = {
     ...db.customers[index],
-    ...data,
+    ...withFormattedAddress(data),
   };
   
   await writeDb(db);
@@ -372,7 +406,6 @@ export async function getAvailableUnits(
 
     // Apply spec filters
     if (spec?.size && unit.size !== spec.size) return false;
-    if (spec?.powerType && unit.powerType !== spec.powerType) return false;
 
     return true;
   });
@@ -381,9 +414,8 @@ export async function getAvailableUnits(
 export async function getMatchingUnits(spec: UnitSpec): Promise<Unit[]> {
   const db = await readDb();
   return db.units.filter((unit) => {
-    if (unit.status !== 'AVAILABLE') return false;
+    if (unit.status !== 'AVAILABLE' || unit.breakdown) return false;
     if (spec.size && unit.size !== spec.size) return false;
-    if (spec.powerType && unit.powerType !== spec.powerType) return false;
     return true;
   });
 }
@@ -442,108 +474,225 @@ export async function getPreviousUnit(customerId: string): Promise<Unit | null> 
 
 // ============ BOOKING ACTIONS ============
 
-export async function createBooking(
-  input: CreateBookingInput
-): Promise<{ success: boolean; booking?: Booking; error?: string }> {
-  const db = await readDb();
+/** Fields kept identical across every unit line of a booking. */
+const SHARED_KEYS = [
+  'contactName',
+  'contactPhone',
+  'deliveryAddress',
+  'deliveryAddressId',
+  'what3wordsAddress',
+  'accessInstructions',
+  'powerAvailable',
+  'powerOther',
+  'application',
+  'notes',
+  'actionDate',
+  'actionDescription',
+  'quote',
+] as const satisfies readonly (keyof BookingSharedInput)[];
 
-  // Server-side re-validation - cannot be bypassed
-  if (!input.startDate || !input.endDate || input.endDate < input.startDate) {
-    return { success: false, error: 'Collection date must be on or after the delivery date' };
-  }
-  const conflict = unitConflict(db, input.unitId, input.startDate, input.endDate);
-  if (conflict) {
-    return { success: false, error: conflict };
-  }
-  const unit = db.units.find((u) => u.id === input.unitId)!;
+const groupIdOf = (b: Booking) => b.groupId ?? b.id;
 
-  // Validate customer exists
-  const customer = db.customers.find((c) => c.id === input.customerId);
-  if (!customer) {
-    return { success: false, error: 'Customer not found' };
-  }
-
-  // Validate power compatibility
-  if (input.powerAvailable === 'STANDARD' && unit.powerType === 'INDUSTRIAL') {
-    return { success: false, error: 'Unit requires industrial power' };
-  }
-
-  const booking: Booking = {
-    id: generateId('book'),
-    ...input,
-    status: 'CONFIRMED',
-    createdAt: today(),
-  };
-
-  db.bookings.push(booking);
-  ensureScheduledDocket(db, booking, 'DELIVERY');
-  await writeDb(db);
-  revalidatePath('/', 'layout');
-
-  return { success: true, booking };
+/** All unit lines of the booking that `bookingId` belongs to, first line first. */
+function groupLines(db: Db, bookingId: string): Booking[] {
+  const booking = db.bookings.find((b) => b.id === bookingId || b.groupId === bookingId);
+  if (!booking) return [];
+  const gid = groupIdOf(booking);
+  return db.bookings.filter((b) => groupIdOf(b) === gid);
 }
 
-export async function updateBooking(
-  bookingId: string,
-  input: UpdateBookingInput
-): Promise<{ success: boolean; booking?: Booking; error?: string }> {
-  const db = await readDb();
-  const booking = db.bookings.find((b) => b.id === bookingId);
-  if (!booking) return { success: false, error: 'Booking not found' };
-  if (!ACTIVE_STATUSES.includes(booking.status)) {
-    return { success: false, error: 'Completed or cancelled bookings cannot be edited' };
-  }
-  const onHire = booking.status === 'ON_HIRE';
-  if (onHire && ((input.unitId && input.unitId !== booking.unitId) || (input.startDate && input.startDate !== booking.startDate))) {
-    return { success: false, error: 'The unit and delivery date cannot change once the unit is on hire' };
-  }
+function cleanShared(shared: Omit<BookingSharedInput, 'customerId'>) {
+  const s = Object.fromEntries(SHARED_KEYS.map((k) => [k, shared[k]])) as Omit<BookingSharedInput, 'customerId'>;
+  s.powerOther = s.powerAvailable === 'OTHER' ? s.powerOther?.trim() || undefined : undefined;
+  return s;
+}
 
-  const next = { ...booking, ...input };
-  if (next.endDate < next.startDate) {
-    return { success: false, error: 'Collection date must be on or after the delivery date' };
-  }
-  const conflict = unitConflict(db, next.unitId, next.startDate, next.endDate, booking.id);
-  if (conflict && !(onHire && conflict === 'Unit is under maintenance')) {
-    return { success: false, error: conflict };
-  }
-  const unit = db.units.find((u) => u.id === next.unitId)!;
-  if (next.powerAvailable === 'STANDARD' && unit.powerType === 'INDUSTRIAL') {
-    return { success: false, error: 'Unit requires industrial power' };
-  }
+function validateShared(shared: Omit<BookingSharedInput, 'customerId'>): string | null {
+  if (!shared.contactName?.trim() || !shared.contactPhone?.trim()) return 'Enter the site contact name and phone number';
+  if (!shared.deliveryAddress?.trim()) return 'Enter the delivery address';
+  if (shared.powerAvailable === 'OTHER' && !shared.powerOther?.trim()) return 'Describe the site power supply';
+  return null;
+}
 
-  Object.assign(booking, input);
-  // Keep open jobs in step with the booking
+/** Checks each line's dates and unit against the fleet and against the other lines of the same booking. */
+function validateLines(db: Db, lines: (BookingLineInput & { id?: string })[], allowOnHireIds: Set<string> = new Set()): string | null {
+  if (lines.length === 0) return 'Add at least one unit';
+  for (const [i, l] of lines.entries()) {
+    if (!l.startDate || !l.endDate || l.endDate < l.startDate) return `${l.unitId || 'Unit'}: collection date must be on or after the delivery date`;
+    const conflict = unitConflict(db, l.unitId, l.startDate, l.endDate, l.id);
+    // Units already on hire can still have their hire extended while in maintenance or broken down
+    if (conflict && !(l.id && allowOnHireIds.has(l.id) && conflict !== 'Unit has a conflicting booking for these dates')) return `${l.unitId}: ${conflict}`;
+    const clash = lines.some((o, j) => j !== i && o.unitId === l.unitId && datesOverlap(l.startDate, l.endDate, o.startDate, o.endDate));
+    if (clash) return `${l.unitId} is on this booking twice for overlapping dates`;
+  }
+  return null;
+}
+
+function lineFields(l: BookingLineInput): BookingLineInput {
+  return {
+    unitId: l.unitId,
+    startDate: l.startDate,
+    endDate: l.endDate,
+    deliveryTime: l.deliveryTime || undefined,
+    collectionTime: l.collectionTime || undefined,
+    tempRequired: l.tempRequired,
+    cableLength: l.cableLength,
+    accessories: l.accessories,
+    rate: l.rate !== undefined && l.rate >= 0 ? l.rate : undefined,
+    ratePeriod: l.rate !== undefined ? l.ratePeriod ?? 'DAY' : undefined,
+  };
+}
+
+/** Keep a line's open jobs in step with its dates, unit and site. */
+function syncOpenJobs(db: Db, booking: Booking) {
   for (const d of db.dockets.filter((d) => d.bookingId === booking.id && d.status !== 'COMPLETED')) {
     d.unitId = booking.unitId;
     d.scheduledDate = d.type === 'DELIVERY' ? booking.startDate : booking.endDate;
     d.scheduledTime = d.type === 'DELIVERY' ? booking.deliveryTime : booking.collectionTime;
     if (booking.what3wordsAddress) d.what3wordsAddress = booking.what3wordsAddress;
-    if (d.type === 'DELIVERY') d.checklist.tempSetting = booking.tempRequired;
+    if (d.type === 'DELIVERY') {
+      d.checklist.tempSetting = booking.tempRequired;
+      d.tempSet = booking.tempRequired;
+    }
+  }
+}
+
+export async function createBooking(
+  input: CreateBookingInput
+): Promise<{ success: boolean; booking?: Booking; error?: string }> {
+  const db = await readDb();
+  if (!db.customers.some((c) => c.id === input.customerId)) return { success: false, error: 'Customer not found' };
+  const shared = cleanShared(input);
+  const error = validateShared(shared) ?? validateLines(db, input.lines);
+  if (error) return { success: false, error };
+
+  const created: Booking[] = [];
+  for (const line of input.lines) {
+    const booking: Booking = {
+      ...shared,
+      ...lineFields(line),
+      id: generateId('book'),
+      customerId: input.customerId,
+      status: 'CONFIRMED',
+      createdAt: today(),
+    };
+    booking.groupId = created[0]?.id ?? booking.id;
+    created.push(booking);
+    db.bookings.push(booking);
+    ensureScheduledDocket(db, booking, 'DELIVERY');
   }
   await writeDb(db);
   revalidatePath('/', 'layout');
-  return { success: true, booking };
+  return { success: true, booking: created[0] };
 }
 
-export async function cancelBooking(
+/**
+ * Save a booking: shared fields go to every unit line; listed lines are updated or added.
+ * Lines that are on hire keep their unit and delivery date.
+ */
+export async function updateBookingGroup(
   bookingId: string,
-  reason?: string
+  input: UpdateBookingGroupInput
 ): Promise<{ success: boolean; error?: string }> {
   const db = await readDb();
-  const booking = db.bookings.find((b) => b.id === bookingId);
-  if (!booking) return { success: false, error: 'Booking not found' };
-  if (booking.status !== 'CONFIRMED') {
-    return { success: false, error: 'Only bookings that have not been delivered can be cancelled' };
+  const lines = groupLines(db, bookingId);
+  if (lines.length === 0) return { success: false, error: 'Booking not found' };
+  if (!lines.some((l) => ACTIVE_STATUSES.includes(l.status))) {
+    return { success: false, error: 'Completed or cancelled bookings cannot be edited' };
   }
-  booking.status = 'CANCELLED';
-  booking.cancelledAt = new Date().toISOString();
-  booking.cancellationReason = reason?.trim() || undefined;
-  booking.actionDate = undefined;
-  // Drop the jobs that will no longer happen
-  db.dockets = db.dockets.filter((d) => !(d.bookingId === booking.id && d.status !== 'COMPLETED'));
+  const shared = cleanShared(input.shared);
+  const sharedError = validateShared(shared);
+  if (sharedError) return { success: false, error: sharedError };
+
+  const byId = new Map(lines.map((l) => [l.id, l]));
+  const cancelIds = new Set(input.cancelIds ?? []);
+  for (const id of cancelIds) {
+    if (byId.get(id)?.status !== 'CONFIRMED') return { success: false, error: 'Only units that have not been delivered can be removed' };
+  }
+  if (input.lines.some((l) => l.id && cancelIds.has(l.id))) return { success: false, error: 'A removed unit is still listed' };
+  if (input.lines.length === 0) return { success: false, error: 'A booking needs at least one unit. Cancel the booking instead.' };
+  const onHire = new Set(lines.filter((l) => l.status === 'ON_HIRE').map((l) => l.id));
+  for (const l of input.lines) {
+    if (!l.id) continue;
+    const existing = byId.get(l.id);
+    if (!existing) return { success: false, error: 'Unit line not found on this booking' };
+    if (!ACTIVE_STATUSES.includes(existing.status)) return { success: false, error: `${existing.unitId} is already ${existing.status === 'CANCELLED' ? 'cancelled' : 'collected'}` };
+    if (onHire.has(l.id) && (l.unitId !== existing.unitId || l.startDate !== existing.startDate)) {
+      return { success: false, error: `${existing.unitId} is on hire, so its unit and delivery date can't change` };
+    }
+  }
+  const lineError = validateLines(db, input.lines, onHire);
+  if (lineError) return { success: false, error: lineError };
+
+  const first = lines[0];
+  for (const l of lines) Object.assign(l, shared);
+  const now = new Date().toISOString();
+  for (const id of cancelIds) {
+    Object.assign(byId.get(id)!, { status: 'CANCELLED', cancelledAt: now, cancellationReason: 'Removed from booking', actionDate: undefined });
+  }
+  db.dockets = db.dockets.filter((d) => !(cancelIds.has(d.bookingId) && d.status !== 'COMPLETED'));
+  for (const l of input.lines) {
+    if (l.id) {
+      const booking = byId.get(l.id)!;
+      Object.assign(booking, lineFields(l));
+      syncOpenJobs(db, booking);
+    } else {
+      const booking: Booking = {
+        ...shared,
+        ...lineFields(l),
+        id: generateId('book'),
+        groupId: groupIdOf(first),
+        customerId: first.customerId,
+        status: 'CONFIRMED',
+        createdAt: today(),
+      };
+      db.bookings.push(booking);
+      ensureScheduledDocket(db, booking, 'DELIVERY');
+    }
+  }
+  // First line of an old single-unit booking becomes the group reference once a unit is added
+  first.groupId ??= first.id;
   await writeDb(db);
   revalidatePath('/', 'layout');
   return { success: true };
+}
+
+/** Cancel one unit line, or every not-yet-delivered line of the booking when `wholeBooking` is set. */
+export async function cancelBooking(
+  bookingId: string,
+  reason?: string,
+  wholeBooking = true
+): Promise<{ success: boolean; error?: string }> {
+  const db = await readDb();
+  const targets = (wholeBooking ? groupLines(db, bookingId) : db.bookings.filter((b) => b.id === bookingId)).filter((b) => b.status === 'CONFIRMED');
+  if (targets.length === 0) return { success: false, error: 'Only units that have not been delivered can be cancelled' };
+  const now = new Date().toISOString();
+  for (const booking of targets) {
+    booking.status = 'CANCELLED';
+    booking.cancelledAt = now;
+    booking.cancellationReason = reason?.trim() || undefined;
+    booking.actionDate = undefined;
+  }
+  // Drop the jobs that will no longer happen
+  const ids = new Set(targets.map((b) => b.id));
+  db.dockets = db.dockets.filter((d) => !(ids.has(d.bookingId) && d.status !== 'COMPLETED'));
+  await writeDb(db);
+  revalidatePath('/', 'layout');
+  return { success: true };
+}
+
+/** Per-line availability problems for the booking form (null = OK). */
+export async function checkBookingLines(lines: (BookingLineInput & { id?: string })[]): Promise<(string | null)[]> {
+  const db = await readDb();
+  return lines.map((l, i) => {
+    if (!l.unitId || !l.startDate || !l.endDate) return null;
+    if (l.endDate < l.startDate) return 'Collection is before delivery';
+    const conflict = unitConflict(db, l.unitId, l.startDate, l.endDate, l.id);
+    const existing = l.id ? db.bookings.find((b) => b.id === l.id) : undefined;
+    if (conflict && !(existing?.status === 'ON_HIRE' && conflict !== 'Unit has a conflicting booking for these dates')) return conflict;
+    const clash = lines.some((o, j) => j !== i && o.unitId === l.unitId && datesOverlap(l.startDate, l.endDate, o.startDate, o.endDate));
+    return clash ? 'Already on this booking for these dates' : null;
+  });
 }
 
 // ============ DELIVERY ACTIONS ============
@@ -835,12 +984,12 @@ export async function updateUnit(
 export async function addUnit(data: {
   id: string;
   size: UnitSize;
-  powerType: PowerType;
   unitType: UnitType;
   notes?: string;
   specifications?: UnitSpecifications;
 }): Promise<{ success: boolean; unit?: Unit; error?: string }> {
   const db = await readDb();
+  if (!data.id.trim()) return { success: false, error: 'Enter a unit ID' };
   
   // Check if ID already exists
   if (db.units.some(u => u.id === data.id)) {
@@ -918,29 +1067,68 @@ export async function removeBOMComponent(
   return { success: true };
 }
 
-export async function addMaintenanceRecord(
+/**
+ * Create (no id) or update a service record. `files` may carry PDFs/images under "files",
+ * which are added to the record's attachments.
+ */
+export async function saveMaintenanceRecord(
   unitId: string,
-  record: Omit<MaintenanceRecord, 'id'>
+  record: Omit<MaintenanceRecord, 'id' | 'attachments'> & { id?: string },
+  files?: FormData
 ): Promise<{ success: boolean; record?: MaintenanceRecord; error?: string }> {
+  if (!record.description?.trim()) return { success: false, error: 'Describe the work carried out' };
+  if (record.hoursWorked !== undefined && !(record.hoursWorked >= 0 && record.hoursWorked <= 1000)) {
+    return { success: false, error: 'Hours worked must be between 0 and 1000' };
+  }
+  const uploads = (files?.getAll('files') ?? []).filter((f): f is File => f instanceof File && f.size > 0);
+  for (const f of uploads) {
+    if (!DOCUMENT_TYPES[f.type]) return { success: false, error: `${f.name} is not a PDF or image` };
+    if (f.size > MAX_DOCUMENT_BYTES) return { success: false, error: `${f.name} is larger than 10 MB` };
+  }
+
   const db = await readDb();
-  const unit = db.units.find(u => u.id === unitId);
-  
-  if (!unit) {
-    return { success: false, error: 'Unit not found' };
+  const unit = db.units.find((u) => u.id === unitId);
+  if (!unit) return { success: false, error: 'Unit not found' };
+  unit.maintenanceHistory ??= [];
+  const existing = record.id ? unit.maintenanceHistory.find((r) => r.id === record.id) : undefined;
+  if (record.id && !existing) return { success: false, error: 'Service record not found' };
+
+  const attachments = [...(existing?.attachments ?? [])];
+  for (const f of uploads) {
+    const url = await saveFile(['maintenance', unit.id], Buffer.from(await f.arrayBuffer()), f.type);
+    attachments.push({ name: f.name, url, size: f.size, type: f.type });
   }
-  
-  const newRecord: MaintenanceRecord = {
-    id: generateId('maint'),
-    ...record,
+  const clean: MaintenanceRecord = {
+    id: existing?.id ?? generateId('maint'),
+    date: record.date,
+    type: record.type,
+    description: record.description.trim(),
+    performedBy: record.performedBy?.trim() ?? '',
+    orderNumbers: [...new Set((record.orderNumbers ?? []).map((o) => o.trim()).filter(Boolean))],
+    hoursWorked: record.hoursWorked,
+    partsReplaced: record.partsReplaced?.map((p) => p.trim()).filter(Boolean),
+    nextServiceDate: record.nextServiceDate || undefined,
+    cost: existing?.cost,
+    attachments,
   };
-  
-  if (!unit.maintenanceHistory) {
-    unit.maintenanceHistory = [];
-  }
-  unit.maintenanceHistory.unshift(newRecord);
+  if (existing) Object.assign(existing, clean);
+  else unit.maintenanceHistory.unshift(clean);
+  // A service that sets its own next date replaces any manually scheduled one
+  if (clean.nextServiceDate) unit.nextServiceDate = undefined;
   await writeDb(db);
-  revalidatePath('/');
-  return { success: true, record: newRecord };
+  revalidatePath('/', 'layout');
+  return { success: true, record: clean };
+}
+
+export async function removeMaintenanceAttachment(unitId: string, recordId: string, url: string): Promise<{ success: boolean; error?: string }> {
+  const db = await readDb();
+  const record = db.units.find((u) => u.id === unitId)?.maintenanceHistory?.find((r) => r.id === recordId);
+  if (!record?.attachments?.some((a) => a.url === url)) return { success: false, error: 'File not found' };
+  record.attachments = record.attachments.filter((a) => a.url !== url);
+  await deleteImage(url);
+  await writeDb(db);
+  revalidatePath('/', 'layout');
+  return { success: true };
 }
 
 export async function addUnitPhotos(
@@ -1052,6 +1240,29 @@ export async function setUnitStatus(
   return { success: true };
 }
 
+/** Flag a unit as broken down (notes given) or clear the flag (null). Works while on hire. */
+export async function setUnitBreakdown(unitId: string, notes: string | null): Promise<{ success: boolean; error?: string }> {
+  const db = await readDb();
+  const unit = db.units.find((u) => u.id === unitId);
+  if (!unit) return { success: false, error: 'Unit not found' };
+  unit.breakdown = notes === null ? undefined : { reportedAt: new Date().toISOString(), notes: notes.trim() || undefined };
+  await writeDb(db);
+  revalidatePath('/', 'layout');
+  return { success: true };
+}
+
+/** Schedule (or clear) the unit's next service date. */
+export async function setUnitNextService(unitId: string, date: string | null): Promise<{ success: boolean; error?: string }> {
+  const db = await readDb();
+  const unit = db.units.find((u) => u.id === unitId);
+  if (!unit) return { success: false, error: 'Unit not found' };
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return { success: false, error: 'Enter a valid date' };
+  unit.nextServiceDate = date || undefined;
+  await writeDb(db);
+  revalidatePath('/', 'layout');
+  return { success: true };
+}
+
 // ============ MAINTENANCE MANAGEMENT ============
 
 export async function getAllMaintenanceRecords(): Promise<(MaintenanceRecord & { unit: Unit })[]> {
@@ -1069,30 +1280,21 @@ export async function getAllMaintenanceRecords(): Promise<(MaintenanceRecord & {
   return records.sort((a, b) => b.date.localeCompare(a.date));
 }
 
-export async function getMaintenanceDueNotifications(): Promise<{ unit: Unit; record: MaintenanceRecord; daysOverdue: number }[]> {
+/** Units whose next service date (manual or from the last record) is today or earlier. */
+export async function getMaintenanceDueNotifications(): Promise<{ unit: Unit; dueDate: string; lastRecord?: MaintenanceRecord; daysOverdue: number }[]> {
   const db = await readDb();
-  const todayStr = today();
-  const notifications: { unit: Unit; record: MaintenanceRecord; daysOverdue: number }[] = [];
-  
-  db.units.forEach(unit => {
-    if (unit.maintenanceHistory) {
-      unit.maintenanceHistory.forEach(record => {
-        if (record.nextServiceDate && record.nextServiceDate <= todayStr) {
-          const nextDate = new Date(record.nextServiceDate);
-          const todayDate = new Date(todayStr);
-          const daysOverdue = Math.floor((todayDate.getTime() - nextDate.getTime()) / (1000 * 60 * 60 * 24));
-          notifications.push({ unit, record, daysOverdue });
-        }
-      });
-    }
-  });
-  
-  return notifications.sort((a, b) => b.daysOverdue - a.daysOverdue);
+  const todayMs = Date.parse(today());
+  return db.units
+    .map((unit) => ({ unit, dueDate: nextServiceDate(unit), lastRecord: unit.maintenanceHistory?.[0] }))
+    .filter((x): x is { unit: Unit; dueDate: string; lastRecord: MaintenanceRecord | undefined } => !!x.dueDate && x.dueDate <= today())
+    .map((x) => ({ ...x, daysOverdue: Math.round((todayMs - Date.parse(x.dueDate)) / 86_400_000) }))
+    .sort((a, b) => b.daysOverdue - a.daysOverdue);
 }
 
+/** Units out of action: in maintenance or flagged as broken down. */
 export async function getUnitsInMaintenance(): Promise<Unit[]> {
   const db = await readDb();
-  return db.units.filter(u => u.status === 'MAINTENANCE');
+  return db.units.filter((u) => u.status === 'MAINTENANCE' || u.breakdown);
 }
 
 export async function getAllBOMComponents(): Promise<(BOMComponent & { unit: Unit })[]> {
@@ -1211,15 +1413,17 @@ export async function getShellData(): Promise<ShellData> {
   const db = await readDb();
   const todayStr = today();
   const notifications: AppNotification[] = [];
+  const customerName = (id: string) => db.customers.find((c) => c.id === id)?.name ?? '';
 
   for (const b of db.bookings) {
     const customer = db.customers.find((c) => c.id === b.customerId);
-    if (ACTIVE_STATUSES.includes(b.status) && b.actionDate && b.actionDate <= todayStr) {
+    // Shared follow-up actions are copied to every unit line; notify once per booking
+    if (ACTIVE_STATUSES.includes(b.status) && b.actionDate && b.actionDate <= todayStr && groupIdOf(b) === b.id) {
       notifications.push({
         id: `action-${b.id}`,
         kind: 'ACTION_OVERDUE',
         title: b.actionDescription || 'Follow-up required',
-        description: `${customer?.name ?? 'Unknown customer'} · ${b.unitId}`,
+        description: `${customer?.name ?? 'Unknown customer'} · ${groupLines(db, b.id).map((l) => l.unitId).join(', ')}`,
         date: b.actionDate,
         href: `/bookings/${b.id}`,
       });
@@ -1236,11 +1440,7 @@ export async function getShellData(): Promise<ShellData> {
     }
   }
   for (const u of db.units) {
-    const due = (u.maintenanceHistory ?? [])
-      .map((r) => r.nextServiceDate)
-      .filter((d): d is string => !!d)
-      .sort()
-      .at(-1);
+    const due = nextServiceDate(u);
     if (due && due <= todayStr) {
       notifications.push({
         id: `service-${u.id}`,
@@ -1251,17 +1451,28 @@ export async function getShellData(): Promise<ShellData> {
         href: `/units/${u.id}`,
       });
     }
+    if (u.breakdown) {
+      notifications.push({
+        id: `breakdown-${u.id}`,
+        kind: 'BREAKDOWN',
+        title: `Breakdown · ${u.id}`,
+        description: u.breakdown.notes || (u.status === 'ON_HIRE' ? 'Broken down on hire' : 'Unit out of action'),
+        date: u.breakdown.reportedAt.split('T')[0],
+        href: `/units/${u.id}`,
+      });
+    }
   }
   notifications.sort((a, b) => a.date.localeCompare(b.date));
 
-  const customerName = (id: string) => db.customers.find((c) => c.id === id)?.name ?? '';
+  const groups = new Map<string, Booking[]>();
+  for (const b of db.bookings) groups.set(groupIdOf(b), [...(groups.get(groupIdOf(b)) ?? []), b]);
 
   return {
     counts: {
       deliveriesToday: db.bookings.filter((b) => b.status === 'CONFIRMED' && b.startDate === todayStr).length,
       collectionsDue: db.bookings.filter((b) => b.status === 'ON_HIRE' && b.endDate <= todayStr).length,
       actionsOverdue: notifications.filter((n) => n.kind === 'ACTION_OVERDUE').length,
-      serviceDue: notifications.filter((n) => n.kind === 'SERVICE_DUE').length,
+      serviceDue: notifications.filter((n) => n.kind === 'SERVICE_DUE' || n.kind === 'BREAKDOWN').length,
     },
     notifications,
     searchIndex: [
@@ -1270,24 +1481,49 @@ export async function getShellData(): Promise<ShellData> {
         id: c.id,
         label: c.name,
         sublabel: c.email || c.phone,
+        keywords: [c.phone, c.address, c.xeroContactId, ...(c.addresses ?? []).map((a) => `${a.label} ${a.address}`)].join(' '),
         href: `/customers/${c.id}`,
       })),
       ...db.units.map((u) => ({
         type: 'unit' as const,
         id: u.id,
         label: u.id,
-        sublabel: `${u.unitType.replace('_', ' ').toLowerCase()} · ${u.status.replace('_', ' ').toLowerCase()}`,
+        sublabel: `${u.unitType.replace('_', ' ').toLowerCase()} · ${u.breakdown ? 'breakdown' : u.status.replace('_', ' ').toLowerCase()}`,
+        keywords: [u.notes, u.dataLoggerId, u.specifications?.chassisNumber].join(' '),
         href: `/units/${u.id}`,
       })),
-      ...db.bookings
-        .filter((b) => ACTIVE_STATUSES.includes(b.status))
-        .map((b) => ({
+      ...[...groups.entries()].map(([gid, lines]) => {
+        const first = lines[0];
+        const status = lines.some((l) => l.status === 'ON_HIRE') ? 'on hire' : lines.some((l) => l.status === 'CONFIRMED') ? 'scheduled' : lines.every((l) => l.status === 'CANCELLED') ? 'cancelled' : 'completed';
+        return {
           type: 'booking' as const,
-          id: b.id,
-          label: b.id,
-          sublabel: `${customerName(b.customerId)} · ${b.unitId}`,
-          href: `/bookings/${b.id}`,
-        })),
+          id: gid,
+          label: `${customerName(first.customerId)} · ${lines.map((l) => l.unitId).join(', ')}`,
+          sublabel: `${gid} · ${status}`,
+          keywords: [first.contactName, first.deliveryAddress, first.quote?.poNumber, first.application, ...lines.map((l) => l.id)].join(' '),
+          href: `/bookings/${gid}`,
+        };
+      }),
+      ...db.units.flatMap((u) =>
+        (u.bom ?? []).map((c) => ({
+          type: 'component' as const,
+          id: `${u.id}-${c.id}`,
+          label: c.name,
+          sublabel: `${u.id} · ${COMPONENT_LABELS[c.type] ?? c.type}`,
+          keywords: [c.manufacturer, c.model, c.serialNumber, COMPONENT_LABELS[c.type]].join(' '),
+          href: `/units/${u.id}`,
+        }))
+      ),
+      ...db.units.flatMap((u) =>
+        (u.maintenanceHistory ?? []).map((r) => ({
+          type: 'service' as const,
+          id: `${u.id}-${r.id}`,
+          label: `${u.id} · ${r.description}`,
+          sublabel: `${r.date}${r.orderNumbers?.length ? ` · order ${r.orderNumbers.join(', ')}` : ''}`,
+          keywords: [r.performedBy, ...(r.orderNumbers ?? []), ...(r.partsReplaced ?? []), ...(r.attachments ?? []).map((a) => a.name)].join(' '),
+          href: `/units/${u.id}`,
+        }))
+      ),
     ],
   };
 }
@@ -1319,20 +1555,23 @@ export async function getDashboardData() {
   };
 }
 
+/** A booking with all its unit lines; `id` may be any line's id or the booking reference. */
 export async function getBookingDetail(id: string) {
   const db = await readDb();
-  const booking = db.bookings.find((b) => b.id === id);
-  if (!booking) return null;
-  const detailed = withDetails(db, booking);
-  if (!detailed) return null;
-  const dockets = db.dockets.filter((d) => d.bookingId === id);
+  const lines = groupLines(db, id)
+    .map((b) => withDetails(db, b))
+    .filter((b): b is BookingWithDetails => !!b);
+  if (lines.length === 0) return null;
+  const ids = new Set(lines.map((l) => l.id));
+  const dockets = db.dockets.filter((d) => ids.has(d.bookingId));
+  const pick = (bookingId: string, type: DeliveryDocket['type']) =>
+    dockets.find((d) => d.bookingId === bookingId && d.type === type && d.status === 'COMPLETED') ??
+    dockets.find((d) => d.bookingId === bookingId && d.type === type);
   const staffName = (sid: string) => db.staff.find((s) => s.id === sid)?.name;
-  const pick = (type: DeliveryDocket['type']) =>
-    dockets.find((d) => d.type === type && d.status === 'COMPLETED') ?? dockets.find((d) => d.type === type);
   return {
-    booking: detailed,
-    delivery: pick('DELIVERY'),
-    collection: pick('COLLECTION'),
+    reference: groupIdOf(lines[0]),
+    booking: lines[0],
+    lines: lines.map((l) => ({ ...l, delivery: pick(l.id, 'DELIVERY'), collection: pick(l.id, 'COLLECTION') })),
     staff: Object.fromEntries(dockets.map((d) => [d.staffId, staffName(d.staffId) ?? 'Unassigned'])),
     allStaff: db.staff,
     units: db.units,

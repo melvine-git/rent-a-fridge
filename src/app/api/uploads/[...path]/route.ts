@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readImage } from '@/lib/uploads';
+import { readUpload } from '@/lib/uploads';
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
-  const file = await readImage(path);
+  const file = await readUpload(path);
   if (!file) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }

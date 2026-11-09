@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import type { Booking, Unit, UnitStatus, UnitType, CalendarView, BookingWithDetails } from '@/types';
 import { cn } from '@/lib/utils';
-import { POWER_LABELS, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS } from '@/lib/domain';
+import { UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, powerLabel } from '@/lib/domain';
 import { daysBetween, formatDate, formatDateRange, formatPhone, toISODate } from '@/lib/format';
 
 interface BookingsCalendarProps {
@@ -219,7 +219,7 @@ export function BookingsCalendar({ bookings, allUnits }: BookingsCalendarProps) 
               />
             ) : (
               filteredUnits.map((unit) => {
-                const inService = unit.status === 'MAINTENANCE';
+                const inService = unit.status === 'MAINTENANCE' || !!unit.breakdown;
                 return (
                   <div key={unit.id} className="group flex border-b last:border-b-0">
                     <Link
@@ -230,7 +230,7 @@ export function BookingsCalendar({ bookings, allUnits }: BookingsCalendarProps) 
                       <div className="min-w-0">
                         <div className="font-mono-unit text-[13px] text-foreground">{unit.id}</div>
                         <div className="truncate text-[11px] text-muted-foreground">
-                          {inService ? 'In service' : `${UNIT_SIZE_LABELS[unit.size]} · ${unit.powerType === 'INDUSTRIAL' ? '32A' : '13A'}`}
+                          {unit.breakdown ? 'Breakdown' : inService ? 'In service' : UNIT_SIZE_LABELS[unit.size]}
                         </div>
                       </div>
                     </Link>
@@ -346,7 +346,7 @@ export function BookingsCalendar({ bookings, allUnits }: BookingsCalendarProps) 
                     {selected.tempRequired}°C
                   </Row>
                   <Row icon={<Zap className="size-4 text-muted-foreground" />} label="Power">
-                    {POWER_LABELS[selected.powerAvailable]}
+                    {powerLabel(selected)}
                   </Row>
                 </dl>
                 {selected.notes && (

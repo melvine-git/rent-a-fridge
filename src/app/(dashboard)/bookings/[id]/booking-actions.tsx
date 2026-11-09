@@ -8,20 +8,21 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field, textareaClass } from '@/components/app/field';
 import { JobDrawer, type JobTarget } from '@/components/jobs/job-drawer';
 import { EditBookingSheet } from './edit-booking-sheet';
+import { deliveredChecklists, type LineDetail } from './booking-units';
 import { cancelBooking } from '@/lib/actions';
 import { Ban, Mail, MessageSquare, PackageCheck, Pencil, Truck } from 'lucide-react';
-import type { BookingWithDetails, DeliveryChecklist, Staff, Unit } from '@/types';
+import type { Staff, Unit } from '@/types';
 
 interface Props {
-  booking: BookingWithDetails;
+  reference: string;
+  lines: LineDetail[];
   staff: Staff[];
   units: Unit[];
-  deliveredChecklist?: DeliveryChecklist;
 }
 
 const outlineBtn = 'inline-flex h-9 items-center gap-1.5 rounded-md border bg-white px-3 text-sm font-medium hover:bg-muted';
 
-export function BookingActions({ booking, staff, units, deliveredChecklist }: Props) {
+export function BookingActions({ reference, lines, staff, units }: Props) {
   const router = useRouter();
   const [job, setJob] = useState<JobTarget | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -29,14 +30,18 @@ export function BookingActions({ booking, staff, units, deliveredChecklist }: Pr
   const [cancelOpen, setCancelOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [isCancelling, startCancel] = useTransition();
+  const booking = lines[0];
 
-  const active = booking.status === 'CONFIRMED' || booking.status === 'ON_HIRE';
+  const toDeliver = lines.filter((l) => l.status === 'CONFIRMED');
+  const onHire = lines.filter((l) => l.status === 'ON_HIRE');
+  const active = toDeliver.length + onHire.length > 0;
+  const delivered = deliveredChecklists(lines);
 
   const doCancel = () =>
     startCancel(async () => {
-      const result = await cancelBooking(booking.id, reason);
+      const result = await cancelBooking(reference, reason);
       if (result.success) {
-        toast.success('Booking cancelled', { description: `${booking.unit.id} is free for those dates again.` });
+        toast.success('Booking cancelled', { description: `${toDeliver.map((l) => l.unit.id).join(', ')} free for those dates again.` });
         setCancelOpen(false);
         router.refresh();
       } else {
@@ -52,7 +57,7 @@ export function BookingActions({ booking, staff, units, deliveredChecklist }: Pr
       <button className={outlineBtn} onClick={() => toast.success('SMS reminder sent', { description: `Reminder sent to ${booking.contactPhone}` })}>
         <MessageSquare className="size-4" /> <span className="hidden xl:inline">SMS</span>
       </button>
-      {booking.status === 'CONFIRMED' && (
+      {toDeliver.length > 0 && onHire.length === 0 && (
         <button className={`${outlineBtn} text-red-700 hover:bg-red-50`} onClick={() => setCancelOpen(true)}>
           <Ban className="size-4" /> Cancel
         </button>
@@ -68,13 +73,13 @@ export function BookingActions({ booking, staff, units, deliveredChecklist }: Pr
           <Pencil className="size-4" /> Edit
         </button>
       )}
-      {booking.status === 'CONFIRMED' && (
-        <Button onClick={() => setJob({ booking, type: 'delivery' })} className="h-9 gap-1.5 px-3 hover:bg-[var(--brand-red-dark)]">
+      {toDeliver.length > 0 && (
+        <Button onClick={() => setJob({ bookings: toDeliver, type: 'delivery', delivered })} className="h-9 gap-1.5 px-3 hover:bg-[var(--brand-red-dark)]">
           <Truck /> Record delivery
         </Button>
       )}
-      {booking.status === 'ON_HIRE' && (
-        <Button onClick={() => setJob({ booking, type: 'collection', deliveredChecklist })} className="h-9 gap-1.5 bg-emerald-600 px-3 hover:bg-emerald-700">
+      {onHire.length > 0 && (
+        <Button onClick={() => setJob({ bookings: onHire, type: 'collection', delivered })} className="h-9 gap-1.5 bg-emerald-600 px-3 hover:bg-emerald-700">
           <PackageCheck /> Record collection
         </Button>
       )}
@@ -92,7 +97,8 @@ export function BookingActions({ booking, staff, units, deliveredChecklist }: Pr
       {active && (
         <EditBookingSheet
           key={editKey}
-          booking={booking}
+          reference={reference}
+          lines={lines}
           units={units}
           open={editOpen}
           onOpenChange={setEditOpen}
@@ -108,7 +114,7 @@ export function BookingActions({ booking, staff, units, deliveredChecklist }: Pr
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Cancel this booking?</DialogTitle>
             <DialogDescription>
-              {booking.customer.name} · {booking.unit.id}. The scheduled delivery will be removed and the unit released for these dates. This can’t be undone.
+              {booking.customer.name} · {toDeliver.map((l) => l.unit.id).join(', ')}. Scheduled deliveries will be removed and the units released for these dates. This can’t be undone.
             </DialogDescription>
           </DialogHeader>
           <Field label="Reason (optional)">

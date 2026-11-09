@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/app/empty-state';
 import { Avatar } from '@/components/app/avatar';
 import { Field, selectClass, textareaClass } from '@/components/app/field';
 import { UnitTypeIcon, UnitCode } from '@/components/app/unit-type-icon';
+import { CustomerFields, customerDraftError, draftFromCustomer, draftToCustomer } from '@/components/customers/customer-fields';
 import { updateCustomer, addCustomerAddress, deleteCustomerAddress, updateCustomerPreferences } from '@/lib/actions';
 import { UNIT_TYPE_LABELS } from '@/lib/domain';
 import { daysBetween, formatDate, formatPhone } from '@/lib/format';
@@ -33,13 +34,8 @@ interface Props {
 export function CustomerDetailView({ customer, bookings, preferredUnit, units }: Props) {
   const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState({
-    name: customer.name,
-    phone: customer.phone,
-    email: customer.email || '',
-    address: customer.address,
-    xeroContactId: customer.xeroContactId || '',
-  });
+  const [draft, setDraft] = useState(() => draftFromCustomer(customer));
+  const [xeroContactId, setXeroContactId] = useState(customer.xeroContactId || '');
   const [showAddAddress, setShowAddAddress] = useState(false);
   const [newAddress, setNewAddress] = useState({ label: '', address: '' });
   const [showPreferences, setShowPreferences] = useState(false);
@@ -51,17 +47,12 @@ export function CustomerDetailView({ customer, bookings, preferredUnit, units }:
   const hireDays = bookings.reduce((sum, b) => sum + daysBetween(b.startDate, b.endDate), 0);
 
   const handleSaveEdit = async () => {
-    if (!editForm.name.trim() || !editForm.phone.trim() || !editForm.address.trim()) {
-      toast.error('Name, phone and invoice address are required');
+    const error = customerDraftError(draft);
+    if (error) {
+      toast.error(error);
       return;
     }
-    const result = await updateCustomer(customer.id, {
-      name: editForm.name.trim(),
-      phone: editForm.phone.trim(),
-      email: editForm.email.trim() || undefined,
-      address: editForm.address.trim(),
-      xeroContactId: editForm.xeroContactId.trim() || undefined,
-    });
+    const result = await updateCustomer(customer.id, { ...draftToCustomer(draft), xeroContactId: xeroContactId.trim() || undefined });
     if (result.success) {
       setIsEditing(false);
       toast.success('Customer updated');
@@ -312,30 +303,23 @@ export function CustomerDetailView({ customer, bookings, preferredUnit, units }:
       </div>
 
       {/* Edit customer */}
-      <Dialog open={isEditing} onOpenChange={setIsEditing}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog
+        open={isEditing}
+        onOpenChange={(o) => {
+          if (o) setDraft(draftFromCustomer(customer));
+          setIsEditing(o);
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Edit customer</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <Field label="Company or name" required>
-              <Input value={editForm.name} onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))} className="h-9" />
-            </Field>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Phone" required>
-                <Input value={editForm.phone} onChange={(e) => setEditForm((p) => ({ ...p, phone: e.target.value }))} className="h-9" />
-              </Field>
-              <Field label="Email">
-                <Input type="email" value={editForm.email} onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))} className="h-9" />
-              </Field>
-            </div>
-            <Field label="Invoice address" required>
-              <Input value={editForm.address} onChange={(e) => setEditForm((p) => ({ ...p, address: e.target.value }))} className="h-9" />
-            </Field>
+            <CustomerFields value={draft} onChange={setDraft} />
             <Field label="Xero contact ID" hint="From the contact's page in Xero (the ID at the end of the web address)">
               <Input
-                value={editForm.xeroContactId}
-                onChange={(e) => setEditForm((p) => ({ ...p, xeroContactId: e.target.value }))}
+                value={xeroContactId}
+                onChange={(e) => setXeroContactId(e.target.value)}
                 placeholder="e.g. 7a4f2c1e-…"
                 className="h-9 font-mono"
               />

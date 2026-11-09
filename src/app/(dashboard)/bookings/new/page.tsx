@@ -12,7 +12,7 @@ export default async function NewBookingPage({ searchParams }: { searchParams: P
       <PageHeader
         breadcrumbs={[{ label: 'Bookings', href: '/bookings' }, { label: 'New booking' }]}
         title="New booking"
-        description="Choose the customer and hire dates, then pick an available unit"
+        description="Choose the customer and hire dates, then pick one or more available units"
       />
       <NewBookingForm customers={customers} allUnits={allUnits} initialCustomerId={customer} />
     </div>

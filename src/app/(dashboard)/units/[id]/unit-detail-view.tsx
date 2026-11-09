@@ -16,11 +16,12 @@ import { TabBar } from '@/components/app/tab-bar';
 import { Field, selectClass, textareaClass } from '@/components/app/field';
 import { UnitTypeIcon } from '@/components/app/unit-type-icon';
 import { UnitPhotos } from './unit-photos';
-import { updateUnit, updateUnitSpecifications, addBOMComponent, removeBOMComponent, addMaintenanceRecord, setUnitStatus } from '@/lib/actions';
-import { COMPONENT_LABELS, GBP, POWER_LABELS, RECORD_TYPE_META, STATUS_META, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS } from '@/lib/domain';
-import { daysBetween, daysFromToday, formatDate, toISODate } from '@/lib/format';
-import { Activity, ArrowUpRight, CalendarDays, Cpu, Pencil, Plus, Ruler, Trash2, Wrench } from 'lucide-react';
-import type { Unit, Booking, Customer, BOMComponent, MaintenanceRecord, UnitType, UnitSize, PowerType, UnitStatus } from '@/types';
+import { ServiceRecordDialog, AttachmentLinks } from '@/components/maintenance/service-record-dialog';
+import { updateUnit, updateUnitSpecifications, addBOMComponent, removeBOMComponent, setUnitStatus, setUnitBreakdown, setUnitNextService } from '@/lib/actions';
+import { COMPONENT_LABELS, GBP, RECORD_TYPE_META, STATUS_META, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, nextServiceDate, unitDisplayStatus } from '@/lib/domain';
+import { daysBetween, daysFromToday, formatDate } from '@/lib/format';
+import { Activity, ArrowUpRight, CalendarClock, CalendarDays, Cpu, Pencil, Plus, Ruler, Trash2, TriangleAlert, Wrench } from 'lucide-react';
+import type { Unit, Booking, Customer, BOMComponent, MaintenanceRecord, UnitType, UnitSize, UnitStatus } from '@/types';
 
 type BookingWithCustomer = Booking & { customer: Customer };
 
@@ -41,11 +42,14 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) 
   const [isEditing, setIsEditing] = useState(false);
   const [showSpecsEdit, setShowSpecsEdit] = useState(false);
   const [showAddBOM, setShowAddBOM] = useState(false);
-  const [showAddMaintenance, setShowAddMaintenance] = useState(false);
+  const [serviceDialog, setServiceDialog] = useState<{ key: number; record?: MaintenanceRecord } | null>(null);
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
+  const [breakdownNotes, setBreakdownNotes] = useState('');
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState('');
 
   const [editForm, setEditForm] = useState({
     size: unit.size,
-    powerType: unit.powerType,
     unitType: unit.unitType,
     notes: unit.notes || '',
     dataLoggerId: unit.dataLoggerId || '',
@@ -63,12 +67,11 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) 
     chassisNumber: s?.chassisNumber || '',
   });
   const [bomForm, setBomForm] = useState({ type: 'OTHER' as BOMComponent['type'], name: '', manufacturer: '', model: '', serialNumber: '', installedDate: '' });
-  const [maintForm, setMaintForm] = useState({ type: 'SCHEDULED' as MaintenanceRecord['type'], description: '', performedBy: '', cost: '', nextServiceDate: '' });
-
   const done = (msg: string) => {
     toast.success(msg);
     router.refresh();
   };
+  const failed = (r: { error?: string }) => toast.error('Could not save', { description: r.error ?? 'Please try again' });
 
   const handleSaveEdit = async () => {
     const r = await updateUnit(unit.id, { ...editForm, notes: editForm.notes.trim() || undefined, dataLoggerId: editForm.dataLoggerId.trim() || undefined });
@@ -90,54 +93,53 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) 
     if (r.success) {
       setShowSpecsEdit(false);
       done('Specifications updated');
-    }
+    } else failed(r);
   };
 
   const handleAddBOM = async () => {
-    if (!bomForm.name) {
+    if (!bomForm.name.trim()) {
       toast.error('Enter a component name');
       return;
     }
-    const r = await addBOMComponent(unit.id, bomForm);
+    const clean = Object.fromEntries(Object.entries(bomForm).map(([k, v]) => [k, v.trim() || undefined])) as typeof bomForm;
+    const r = await addBOMComponent(unit.id, { ...clean, type: bomForm.type, name: bomForm.name.trim() }).catch(() => ({ success: false, error: 'Connection problem, please try again' }));
     if (r.success) {
       setShowAddBOM(false);
       setBomForm({ type: 'OTHER', name: '', manufacturer: '', model: '', serialNumber: '', installedDate: '' });
       done('Component added');
-    }
+    } else failed(r);
   };
 
   const handleRemoveBOM = async (id: string) => {
     const r = await removeBOMComponent(unit.id, id);
     if (r.success) done('Component removed');
-  };
-
-  const handleAddMaintenance = async () => {
-    if (!maintForm.description) {
-      toast.error('Describe the work carried out');
-      return;
-    }
-    const r = await addMaintenanceRecord(unit.id, {
-      date: toISODate(new Date()),
-      type: maintForm.type,
-      description: maintForm.description,
-      performedBy: maintForm.performedBy,
-      cost: maintForm.cost ? parseFloat(maintForm.cost) : undefined,
-      nextServiceDate: maintForm.nextServiceDate || undefined,
-    });
-    if (r.success) {
-      setShowAddMaintenance(false);
-      setMaintForm({ type: 'SCHEDULED', description: '', performedBy: '', cost: '', nextServiceDate: '' });
-      done('Service record added');
-    }
+    else failed(r);
   };
 
   const handleSetStatus = async (status: UnitStatus) => {
     const r = await setUnitStatus(unit.id, status);
     if (r.success) done(`Status set to ${STATUS_META[status].label.toLowerCase()}`);
+    else failed(r);
+  };
+
+  const saveBreakdown = async (notes: string | null) => {
+    const r = await setUnitBreakdown(unit.id, notes);
+    if (r.success) {
+      setBreakdownOpen(false);
+      done(notes === null ? `${unit.id} marked as fixed` : `${unit.id} marked as broken down`);
+    } else failed(r);
+  };
+
+  const saveSchedule = async (date: string | null) => {
+    const r = await setUnitNextService(unit.id, date);
+    if (r.success) {
+      setScheduleOpen(false);
+      done(date ? `Next service set for ${formatDate(date, { year: true })}` : 'Scheduled service cleared');
+    } else failed(r);
   };
 
   const history = unit.maintenanceHistory ?? [];
-  const nextService = history.map((r) => r.nextServiceDate).filter((d): d is string => !!d).sort().at(-1);
+  const nextService = nextServiceDate(unit);
   const serviceDays = nextService ? daysFromToday(nextService) : undefined;
   const hireDays = bookingHistory.reduce((sum, b) => sum + daysBetween(b.startDate, b.endDate), 0);
 
@@ -151,26 +153,60 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) 
             <span className="font-mono-unit text-2xl">{unit.id}</span>
           </span>
         }
-        meta={<StatusBadge status={unit.status} />}
-        description={`${UNIT_TYPE_LABELS[unit.unitType]} · ${UNIT_SIZE_LABELS[unit.size]} · ${POWER_LABELS[unit.powerType]}`}
+        meta={<StatusBadge status={unitDisplayStatus(unit)} />}
+        description={`${UNIT_TYPE_LABELS[unit.unitType]} · ${UNIT_SIZE_LABELS[unit.size]}`}
         actions={
           <>
             <select
               value={unit.status}
               onChange={(e) => handleSetStatus(e.target.value as UnitStatus)}
-              className={`${selectClass} w-auto font-medium`}
+              className={`${selectClass.replace('w-full', 'w-auto')} font-medium`}
               aria-label="Change status"
             >
               <option value="AVAILABLE">Available</option>
-              <option value="ON_HIRE">On hire</option>
-              <option value="MAINTENANCE">Maintenance</option>
+              <option value="ON_HIRE" disabled={unit.status !== 'ON_HIRE'}>
+                On hire
+              </option>
+              <option value="MAINTENANCE">In maintenance</option>
             </select>
+            {!unit.breakdown && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setBreakdownNotes('');
+                  setBreakdownOpen(true);
+                }}
+                className="h-9 gap-1.5 px-3 text-red-700 hover:bg-red-50"
+              >
+                <TriangleAlert /> Breakdown
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setIsEditing(true)} className="h-9 gap-1.5 px-3">
               <Pencil /> Edit
             </Button>
           </>
         }
       />
+
+      {unit.breakdown && (
+        <div className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-red-200 bg-red-50/70 px-4 py-3 sm:flex-row sm:items-center">
+          <TriangleAlert className="size-5 shrink-0 text-red-600" />
+          <div className="min-w-0 flex-1 text-sm">
+            <div className="font-semibold text-red-900">
+              Broken down{unit.status === 'ON_HIRE' ? ' while on hire' : ''} · reported {formatDate(unit.breakdown.reportedAt.split('T')[0], { year: true })}
+            </div>
+            <div className="text-red-800/80">{unit.breakdown.notes || 'No details recorded'}. New bookings are blocked until it is fixed.</div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setServiceDialog({ key: Date.now() })} className="h-9 bg-white px-3">
+              Log repair
+            </Button>
+            <Button onClick={() => saveBreakdown(null)} className="h-9 bg-emerald-600 px-3 hover:bg-emerald-700">
+              Mark fixed
+            </Button>
+          </div>
+        </div>
+      )}
 
       {currentBooking && (
         <Link
@@ -196,9 +232,22 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) 
           { label: 'Total hires', value: bookingHistory.length, sub: `${hireDays} days on hire` },
           {
             label: 'Next service',
-            value: nextService ? formatDate(nextService) : 'Not scheduled',
+            value: (
+              <button
+                type="button"
+                onClick={() => {
+                  setScheduleDate(nextService ?? '');
+                  setScheduleOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 hover:underline"
+                title="Change the next service date"
+              >
+                {nextService ? formatDate(nextService) : 'Not scheduled'}
+                <Pencil className="size-3.5 text-muted-foreground" />
+              </button>
+            ),
             sub:
-              serviceDays === undefined ? 'Log a service to set a reminder' : serviceDays < 0 ? <span className="font-medium text-red-600">{-serviceDays} days overdue</span> : `in ${serviceDays} days`,
+              serviceDays === undefined ? 'Click to schedule' : serviceDays < 0 ? <span className="font-medium text-red-600">{-serviceDays} days overdue</span> : `in ${serviceDays} days`,
           },
           { label: 'Capacity', value: s?.cubicCapacity ? `${s.cubicCapacity} m³` : '—', sub: s?.doorAccess || 'Door access not set' },
           { label: 'Data logger', value: unit.dataLoggerId ? 'Connected' : 'None', sub: unit.dataLoggerId ? <span className="font-mono">{unit.dataLoggerId}</span> : 'Not configured' },
@@ -255,7 +304,6 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) 
             <DetailList>
               <DetailItem label="Unit type">{UNIT_TYPE_LABELS[unit.unitType]}</DetailItem>
               <DetailItem label="Size">{UNIT_SIZE_LABELS[unit.size]}</DetailItem>
-              <DetailItem label="Power">{POWER_LABELS[unit.powerType]}</DetailItem>
               <DetailItem label="Data logger ID">
                 {unit.dataLoggerId ? <span className="font-mono">{unit.dataLoggerId}</span> : <span className="text-muted-foreground">Not set</span>}
               </DetailItem>
@@ -364,7 +412,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) 
             title="Service history"
             className="lg:col-span-2"
             action={
-              <Button variant="outline" size="sm" onClick={() => setShowAddMaintenance(true)} className="h-8 gap-1 px-2.5 text-xs">
+              <Button variant="outline" size="sm" onClick={() => setServiceDialog({ key: Date.now() })} className="h-8 gap-1 px-2.5 text-xs">
                 <Plus /> Log service
               </Button>
             }
@@ -372,19 +420,44 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) 
             {history.length ? (
               <ul className="divide-y">
                 {history.map((r) => (
-                  <li key={r.id} className="flex gap-4 px-4 py-3">
-                    <div className="tabular w-20 shrink-0 text-xs text-muted-foreground">{formatDate(r.date, { year: true })}</div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Pill tone={RECORD_TYPE_META[r.type].tone}>{RECORD_TYPE_META[r.type].label}</Pill>
-                        {r.performedBy && <span className="text-xs text-muted-foreground">by {r.performedBy}</span>}
+                  <li key={r.id}>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setServiceDialog({ key: Date.now(), record: r })}
+                      onKeyDown={(e) => e.key === 'Enter' && setServiceDialog({ key: Date.now(), record: r })}
+                      className="flex cursor-pointer gap-4 px-4 py-3 hover:bg-muted/40"
+                      title="Edit record or attach documents"
+                    >
+                      <div className="tabular w-20 shrink-0 text-xs text-muted-foreground">{formatDate(r.date, { year: true })}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Pill tone={RECORD_TYPE_META[r.type].tone}>{RECORD_TYPE_META[r.type].label}</Pill>
+                          {r.performedBy && <span className="text-xs text-muted-foreground">by {r.performedBy}</span>}
+                          {r.hoursWorked !== undefined && <span className="text-xs text-muted-foreground">· {r.hoursWorked}h</span>}
+                        </div>
+                        <p className="mt-1 text-sm text-foreground">{r.description}</p>
+                        {r.partsReplaced?.length ? <p className="mt-0.5 text-xs text-muted-foreground">Parts: {r.partsReplaced.join(', ')}</p> : null}
+                        {r.orderNumbers?.length ? (
+                          <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                            Order nos.
+                            {r.orderNumbers.map((o) => (
+                              <span key={o} className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+                                {o}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {!!r.attachments?.length && (
+                          <div className="mt-1.5">
+                            <AttachmentLinks files={r.attachments} />
+                          </div>
+                        )}
                       </div>
-                      <p className="mt-1 text-sm text-foreground">{r.description}</p>
-                      {r.partsReplaced?.length ? <p className="mt-0.5 text-xs text-muted-foreground">Parts: {r.partsReplaced.join(', ')}</p> : null}
-                    </div>
-                    <div className="shrink-0 text-right">
-                      {r.cost ? <div className="tabular text-sm font-medium text-foreground">{GBP.format(r.cost)}</div> : null}
-                      {r.nextServiceDate && <div className="text-xs text-muted-foreground">Next {formatDate(r.nextServiceDate)}</div>}
+                      <div className="shrink-0 text-right">
+                        {r.cost ? <div className="tabular text-sm font-medium text-foreground">{GBP.format(r.cost)}</div> : null}
+                        {r.nextServiceDate && <div className="text-xs text-muted-foreground">Next {formatDate(r.nextServiceDate)}</div>}
+                      </div>
                     </div>
                   </li>
                 ))}
@@ -424,26 +497,15 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) 
                 ))}
               </select>
             </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Size">
-                <select value={editForm.size} onChange={(e) => setEditForm((p) => ({ ...p, size: e.target.value as UnitSize }))} className={selectClass}>
-                  {(Object.keys(UNIT_SIZE_LABELS) as UnitSize[]).map((v) => (
-                    <option key={v} value={v}>
-                      {UNIT_SIZE_LABELS[v]}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Power">
-                <select value={editForm.powerType} onChange={(e) => setEditForm((p) => ({ ...p, powerType: e.target.value as PowerType }))} className={selectClass}>
-                  {(Object.keys(POWER_LABELS) as PowerType[]).map((v) => (
-                    <option key={v} value={v}>
-                      {POWER_LABELS[v]}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
+            <Field label="Size">
+              <select value={editForm.size} onChange={(e) => setEditForm((p) => ({ ...p, size: e.target.value as UnitSize }))} className={selectClass}>
+                {(Object.keys(UNIT_SIZE_LABELS) as UnitSize[]).map((v) => (
+                  <option key={v} value={v}>
+                    {UNIT_SIZE_LABELS[v]}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <Field label="Data logger ID" hint="The device ID from your data logger software">
               <Input value={editForm.dataLoggerId} onChange={(e) => setEditForm((p) => ({ ...p, dataLoggerId: e.target.value }))} placeholder="e.g. DL-2041" className="h-9 font-mono" />
             </Field>
@@ -560,41 +622,69 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) 
         </DialogContent>
       </Dialog>
 
-      {/* Maintenance */}
-      <Dialog open={showAddMaintenance} onOpenChange={setShowAddMaintenance}>
+      {/* Service record */}
+      {serviceDialog && (
+        <ServiceRecordDialog
+          key={serviceDialog.key}
+          open
+          onOpenChange={(o) => !o && setServiceDialog(null)}
+          unitId={unit.id}
+          record={serviceDialog.record}
+          onSaved={() => {
+            setServiceDialog(null);
+            router.refresh();
+          }}
+        />
+      )}
+
+      {/* Breakdown */}
+      <Dialog open={breakdownOpen} onOpenChange={setBreakdownOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Log service for {unit.id}</DialogTitle>
+            <DialogTitle className="text-base font-semibold">Mark {unit.id} as broken down</DialogTitle>
+            <DialogDescription>
+              {unit.status === 'ON_HIRE'
+                ? 'The hire stays open so the unit can be repaired on site or swapped. New bookings are blocked until it is marked fixed.'
+                : 'New bookings are blocked until it is marked fixed.'}
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <Field label="Type">
-              <select value={maintForm.type} onChange={(e) => setMaintForm((p) => ({ ...p, type: e.target.value as MaintenanceRecord['type'] }))} className={selectClass}>
-                <option value="SCHEDULED">Scheduled service</option>
-                <option value="REPAIR">Repair</option>
-                <option value="INSPECTION">Inspection</option>
-              </select>
-            </Field>
-            <Field label="Work carried out" required>
-              <textarea value={maintForm.description} onChange={(e) => setMaintForm((p) => ({ ...p, description: e.target.value }))} className={textareaClass} />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Technician">
-                <Input value={maintForm.performedBy} onChange={(e) => setMaintForm((p) => ({ ...p, performedBy: e.target.value }))} className="h-9" />
-              </Field>
-              <Field label="Cost (£)">
-                <Input type="number" min="0" step="0.01" value={maintForm.cost} onChange={(e) => setMaintForm((p) => ({ ...p, cost: e.target.value }))} className="h-9" />
-              </Field>
-            </div>
-            <Field label="Next service date">
-              <Input type="date" value={maintForm.nextServiceDate} onChange={(e) => setMaintForm((p) => ({ ...p, nextServiceDate: e.target.value }))} className="h-9" />
-            </Field>
-          </div>
+          <Field label="What's wrong?">
+            <textarea value={breakdownNotes} onChange={(e) => setBreakdownNotes(e.target.value)} placeholder="e.g. Not holding temperature, compressor tripping" className={textareaClass} />
+          </Field>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddMaintenance(false)} className="h-9 px-4">
+            <Button variant="outline" onClick={() => setBreakdownOpen(false)} className="h-9 px-4">
               Cancel
             </Button>
-            <Button onClick={handleAddMaintenance} className="h-9 px-4 hover:bg-[var(--brand-red-dark)]">
-              Save record
+            <Button onClick={() => saveBreakdown(breakdownNotes)} className="h-9 bg-red-600 px-4 hover:bg-red-700">
+              Mark as breakdown
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Next service */}
+      <Dialog open={scheduleOpen} onOpenChange={setScheduleOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+              <CalendarClock className="size-4" /> Schedule next service
+            </DialogTitle>
+            <DialogDescription>A reminder appears when this date is reached. Logging a service with its own next date replaces it.</DialogDescription>
+          </DialogHeader>
+          <Field label="Next service date">
+            <Input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} className="h-9" />
+          </Field>
+          <DialogFooter>
+            {unit.nextServiceDate && (
+              <Button variant="ghost" onClick={() => saveSchedule(null)} className="mr-auto h-9 px-3 text-muted-foreground">
+                Clear
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setScheduleOpen(false)} className="h-9 px-4">
+              Cancel
+            </Button>
+            <Button onClick={() => saveSchedule(scheduleDate)} disabled={!scheduleDate} className="h-9 px-4 hover:bg-[var(--brand-red-dark)]">
+              Save date
             </Button>
           </DialogFooter>
         </DialogContent>

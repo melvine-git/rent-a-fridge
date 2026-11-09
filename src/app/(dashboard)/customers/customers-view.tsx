@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { SegmentedControl } from '@/components/app/segmented-control';
 import { EmptyState } from '@/components/app/empty-state';
 import { Avatar } from '@/components/app/avatar';
-import { Field } from '@/components/app/field';
+import { CustomerFields, customerDraftError, draftToCustomer, emptyCustomerDraft } from '@/components/customers/customer-fields';
 import { Pill } from '@/components/ui/status-badge';
 import { addCustomer } from '@/lib/actions';
 import { formatDate, formatPhone } from '@/lib/format';
@@ -31,21 +31,21 @@ export function CustomersView({ initialCustomers }: CustomersViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [segment, setSegment] = useState<'all' | 'active' | 'inactive'>('all');
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'name', dir: 1 });
-  const [formData, setFormData] = useState({ name: '', phone: '', email: '', address: '' });
+  const [draft, setDraft] = useState(emptyCustomerDraft);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const error = customerDraftError(draft);
+    if (error) {
+      toast.error(error);
+      return;
+    }
     setIsSubmitting(true);
     try {
-      const newCustomer = await addCustomer({
-        name: formData.name,
-        phone: formData.phone,
-        email: formData.email || undefined,
-        address: formData.address,
-      });
+      const newCustomer = await addCustomer(draftToCustomer(draft));
       setCustomers((prev) => [...prev, { ...newCustomer, activeHires: 0, totalBookings: 0 }]);
-      toast.success('Customer added', { description: `${newCustomer.name} has been added` });
-      setFormData({ name: '', phone: '', email: '', address: '' });
+      toast.success('Customer added', { description: newCustomer.name + ' has been added' });
+      setDraft(emptyCustomerDraft());
       setIsDialogOpen(false);
       router.refresh();
     } catch {
@@ -194,50 +194,13 @@ export function CustomersView({ initialCustomers }: CustomersViewProps) {
       </section>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Add customer</DialogTitle>
             <DialogDescription>Create a new account. You can add delivery addresses and preferences afterwards.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <Field label="Company or name" required>
-              <Input
-                value={formData.name}
-                onChange={(e) => setFormData((p) => ({ ...p, name: e.target.value }))}
-                placeholder="e.g. Hillside Catering"
-                required
-                className="h-9"
-              />
-            </Field>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Phone" required>
-                <Input
-                  value={formData.phone}
-                  onChange={(e) => setFormData((p) => ({ ...p, phone: e.target.value }))}
-                  placeholder="+44 28 …"
-                  required
-                  className="h-9"
-                />
-              </Field>
-              <Field label="Email">
-                <Input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData((p) => ({ ...p, email: e.target.value }))}
-                  placeholder="name@company.com"
-                  className="h-9"
-                />
-              </Field>
-            </div>
-            <Field label="Invoice address" required>
-              <Input
-                value={formData.address}
-                onChange={(e) => setFormData((p) => ({ ...p, address: e.target.value }))}
-                placeholder="Street, town, postcode"
-                required
-                className="h-9"
-              />
-            </Field>
+            <CustomerFields value={draft} onChange={setDraft} />
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} className="h-9 px-4">
                 Cancel
