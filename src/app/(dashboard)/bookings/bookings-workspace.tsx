@@ -12,7 +12,7 @@ import { BookingsCalendar, occupies } from './bookings-calendar';
 import { GBP, unitDisplayStatus } from '@/lib/domain';
 import { daysBetween, formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { CalendarRange, CircleAlert, List, PackageCheck, Search, SearchX, Truck, Warehouse, type LucideIcon } from 'lucide-react';
+import { CalendarRange, ChevronRight, CircleAlert, List, PackageCheck, Search, SearchX, Truck, Warehouse, type LucideIcon } from 'lucide-react';
 import type { BookingListItem } from '@/lib/actions';
 import type { BookingWithDetails, Unit } from '@/types';
 
@@ -40,7 +40,12 @@ export function BookingsWorkspace({ bookings, allUnits, list, today }: { booking
       !bookings.some((b) => b.unitId === u.id && occupies(b, today, today))
   ).length;
   const count = (f: ListFilter) => list.filter(FILTERS.find((x) => x.value === f)!.test).length;
-  const unitsIn = (f: ListFilter) => list.filter(FILTERS.find((x) => x.value === f)!.test).reduce((n, b) => n + b.lines.filter((l) => l.status !== 'CANCELLED').length, 0);
+  const inService = allUnits.filter((u) => unitDisplayStatus(u) !== 'MAINTENANCE' && !u.breakdown).length;
+  const lines = list.flatMap((b) => b.lines);
+  const unitsOnHire = lines.filter((l) => l.status === 'ON_HIRE').length;
+  const unitsToDeliver = lines.filter((l) => l.status === 'CONFIRMED').length;
+  const late = count('attention');
+  const bookingsWord = (n: number) => `${n} booking${n === 1 ? '' : 's'}`;
 
   const openList = (f: ListFilter) => {
     setFilter(f);
@@ -51,17 +56,18 @@ export function BookingsWorkspace({ bookings, allUnits, list, today }: { booking
     <div className="space-y-4">
       {/* Summary */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Summary icon={PackageCheck} tone="sky" label="On hire" value={count('onhire')} sub={`${unitsIn('onhire')} units out`} onClick={() => openList('onhire')} />
-        <Summary icon={Truck} tone="violet" label="Scheduled" value={count('upcoming')} sub={`${unitsIn('upcoming')} units to deliver`} onClick={() => openList('upcoming')} />
+        <Summary icon={PackageCheck} tone="sky" label="Units on hire" value={unitsOnHire} sub={`On ${bookingsWord(count('onhire'))}`} cta="View list" onClick={() => openList('onhire')} />
+        <Summary icon={Truck} tone="violet" label="Units to deliver" value={unitsToDeliver} sub={`On ${bookingsWord(count('upcoming'))}`} cta="View list" onClick={() => openList('upcoming')} />
         <Summary
           icon={CircleAlert}
-          tone={count('attention') ? 'red' : 'stone'}
+          tone={late ? 'red' : 'stone'}
           label="Late or overdue"
-          value={count('attention')}
-          sub={count('attention') ? 'Needs action' : 'All on time'}
+          value={late}
+          sub={late ? `${bookingsWord(late)} need action` : 'Nothing late'}
+          cta="View list"
           onClick={() => openList('attention')}
         />
-        <Summary icon={Warehouse} tone="emerald" label="Free today" value={freeToday} sub={`of ${allUnits.length} units`} onClick={() => setView('timeline')} />
+        <Summary icon={Warehouse} tone="emerald" label="Units free today" value={freeToday} sub={`Of ${inService} in service`} cta="View timeline" onClick={() => setView('timeline')} />
       </div>
 
       {/* View switch */}
@@ -100,21 +106,25 @@ const TONES = {
   stone: 'bg-stone-100 text-stone-500',
 } as const;
 
-function Summary({ icon: Icon, tone, label, value, sub, onClick }: { icon: LucideIcon; tone: keyof typeof TONES; label: string; value: number; sub: string; onClick: () => void }) {
+function Summary({ icon: Icon, tone, label, value, sub, cta, onClick }: { icon: LucideIcon; tone: keyof typeof TONES; label: string; value: number; sub: string; cta: string; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="group flex items-center gap-3.5 rounded-xl border bg-white p-4 text-left shadow-[var(--shadow-xs)] transition-all outline-none hover:-translate-y-0.5 hover:border-foreground/15 hover:shadow-[var(--shadow-md)] focus-visible:ring-2 focus-visible:ring-ring/40"
+      title={`${label}: ${cta.toLowerCase()}`}
+      className="group flex flex-col rounded-xl border bg-white p-4 text-left shadow-[var(--shadow-xs)] transition-all outline-none hover:-translate-y-0.5 hover:border-foreground/15 hover:shadow-[var(--shadow-md)] focus-visible:ring-2 focus-visible:ring-ring/40"
     >
-      <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-xl', TONES[tone])}>
-        <Icon className="size-5" />
+      <span className="flex items-center justify-between gap-2">
+        <span className="text-[13px] font-medium text-muted-foreground">{label}</span>
+        <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', TONES[tone])}>
+          <Icon className="size-4" />
+        </span>
       </span>
-      <span className="min-w-0">
-        <span className="block text-[13px] font-medium text-muted-foreground">{label}</span>
-        <span className="flex items-baseline gap-2">
-          <span className={cn('tabular text-2xl leading-tight font-semibold tracking-tight', tone === 'red' ? 'text-red-600' : 'text-foreground')}>{value}</span>
-          <span className="truncate text-xs text-muted-foreground">{sub}</span>
+      <span className={cn('tabular mt-2 text-[28px] leading-none font-semibold tracking-tight', tone === 'red' ? 'text-red-600' : 'text-foreground')}>{value}</span>
+      <span className="mt-2 flex items-center justify-between gap-2 text-xs">
+        <span className="truncate text-muted-foreground">{sub}</span>
+        <span className="inline-flex shrink-0 items-center gap-0.5 font-medium text-muted-foreground/70 transition-colors group-hover:text-foreground">
+          {cta} <ChevronRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
         </span>
       </span>
     </button>
