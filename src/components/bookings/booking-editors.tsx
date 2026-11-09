@@ -117,7 +117,7 @@ export function LinesEditor({
     return <p className="rounded-md border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">Pick one or more units above. Each unit can have its own dates, temperature and rate.</p>;
   }
   return (
-    <ul className="space-y-3">
+    <ul className="@container space-y-3">
       {lines.map((l) => {
         const unit = units.find((u) => u.id === l.unitId);
         const onHire = l.status === 'ON_HIRE';
@@ -144,7 +144,7 @@ export function LinesEditor({
               )}
             </header>
             <div className="space-y-3 p-3">
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 @xl:grid-cols-4">
                 <Field label="Delivery">
                   <Input type="date" value={l.startDate} disabled={onHire} onChange={(e) => set({ startDate: e.target.value })} className="h-9" />
                 </Field>
@@ -158,7 +158,7 @@ export function LinesEditor({
                   <Input type="time" value={l.collectionTime} onChange={(e) => set({ collectionTime: e.target.value })} className="h-9" />
                 </Field>
               </div>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 @xl:grid-cols-4">
                 <Field label="Temp (°C)">
                   <Input type="number" min="-25" max="15" value={l.tempRequired} onChange={(e) => set({ tempRequired: e.target.value })} className="h-9" />
                 </Field>
@@ -250,8 +250,8 @@ export function siteError(s: SiteDraft): string | null {
 /** Contact person on site (often not the hirer) and the site's power supply. */
 export function ContactAndPowerFields({ value, onChange }: { value: SiteDraft; onChange: (patch: Partial<SiteDraft>) => void }) {
   return (
-    <>
-      <div className="grid gap-4 sm:grid-cols-2">
+    <div className="@container space-y-4">
+      <div className="grid gap-4 @md:grid-cols-2">
         <Field label="Site contact name" required hint="The person on site on the day. Often not the hirer.">
           <Input value={value.contactName} onChange={(e) => onChange({ contactName: e.target.value })} placeholder="e.g. Jane Smith" className="h-9" autoComplete="off" />
         </Field>
@@ -259,7 +259,7 @@ export function ContactAndPowerFields({ value, onChange }: { value: SiteDraft; o
           <Input type="tel" value={value.contactPhone} onChange={(e) => onChange({ contactPhone: e.target.value })} placeholder="e.g. 07700 900123" className="h-9" autoComplete="off" />
         </Field>
       </div>
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 @md:grid-cols-2 @2xl:grid-cols-3">
         <Field label="Site power" required>
           <select value={value.powerAvailable} onChange={(e) => onChange({ powerAvailable: e.target.value as PowerType })} className={selectClass}>
             {(Object.keys(POWER_LABELS) as PowerType[]).map((p) => (
@@ -274,13 +274,13 @@ export function ContactAndPowerFields({ value, onChange }: { value: SiteDraft; o
             <Input value={value.powerOther} onChange={(e) => onChange({ powerOther: e.target.value })} placeholder="e.g. Generator, 16A blue" className="h-9" />
           </Field>
         ) : (
-          <div className="hidden sm:block" />
+          <div className="hidden @2xl:block" />
         )}
         <Field label="Application">
           <Input value={value.application} onChange={(e) => onChange({ application: e.target.value })} placeholder="e.g. fresh produce" className="h-9" />
         </Field>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -334,8 +334,8 @@ export function QuoteEditor({ lines, value, onChange }: { lines: LineDraft[]; va
   const totals = quoteTotals(priced, quoteToInput(value));
 
   return (
-    <div className="space-y-4">
-      <div className="overflow-hidden rounded-md border">
+    <div className="@container space-y-4">
+      <div className="overflow-x-auto rounded-md border">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
@@ -352,10 +352,10 @@ export function QuoteEditor({ lines, value, onChange }: { lines: LineDraft[]; va
               return (
                 <tr key={l.id ?? l.unitId + l.startDate} className="text-muted-foreground">
                   <td className="px-3 py-2">
-                    <span className="text-foreground">Hire of {l.unitId}</span>
+                    <span className="whitespace-nowrap text-foreground">Hire of {l.unitId}</span>
                     {l.rate === undefined && <span className="ml-2 text-xs text-amber-700">No rate set</span>}
                   </td>
-                  <td className="tabular px-3 py-2 text-right">
+                  <td className="tabular px-3 py-2 text-right whitespace-nowrap">
                     {c.qty} {c.unit}
                   </td>
                   <td className="tabular px-3 py-2 text-right">{l.rate !== undefined ? GBP.format(l.rate) : '—'}</td>
@@ -397,8 +397,8 @@ export function QuoteEditor({ lines, value, onChange }: { lines: LineDraft[]; va
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-[1fr_260px]">
-        <div className="grid grid-cols-[1.5fr_1fr_0.8fr] gap-3 self-start">
+      <div className="grid gap-4 @2xl:grid-cols-[1fr_260px]">
+        <div className="grid gap-3 self-start @md:grid-cols-[1.5fr_1fr_0.8fr]">
           <Field label="Customer PO number">
             <Input value={value.poNumber} onChange={(e) => set({ poNumber: e.target.value })} placeholder="Optional" className="h-9" />
           </Field>

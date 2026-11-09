@@ -130,7 +130,7 @@ export function EditBookingSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full gap-0 sm:max-w-2xl">
+      <SheetContent side="right" className="w-full gap-0 sm:max-w-3xl">
         <SheetHeader className="border-b px-5 py-4">
           <SheetTitle className="text-base font-semibold">Edit booking</SheetTitle>
           <SheetDescription>
