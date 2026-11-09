@@ -72,6 +72,14 @@ export function quoteTotals(lines: Pick<Booking, 'startDate' | 'endDate' | 'rate
   return { hire, extras, discount, net, vatRate, vat, total: round2(net + vat) };
 }
 
+/** One status for a whole booking, from its unit lines. */
+export function bookingGroupStatus(statuses: BookingStatus[]): BookingStatus {
+  if (statuses.some((s) => s === 'ON_HIRE')) return 'ON_HIRE';
+  if (statuses.some((s) => s === 'CONFIRMED')) return 'CONFIRMED';
+  if (statuses.every((s) => s === 'CANCELLED')) return 'CANCELLED';
+  return 'COLLECTED';
+}
+
 export type UnitDisplayStatus = UnitStatus | 'BREAKDOWN';
 
 /** Breakdown overrides the stored status for display, so a broken unit on hire still stands out. */

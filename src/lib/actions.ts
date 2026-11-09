@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { readDb, writeDb } from './db';
 import { saveImage, saveFile, deleteImage, IMAGE_TYPES, MAX_UPLOAD_BYTES, DOCUMENT_TYPES, MAX_DOCUMENT_BYTES } from './uploads';
 import { formatAddress } from './format';
-import { nextServiceDate, COMPONENT_LABELS } from './domain';
+import { nextServiceDate, COMPONENT_LABELS, bookingGroupStatus, quoteTotals } from './domain';
 import type {
   Customer,
   CustomerAddress,
@@ -1351,6 +1351,62 @@ export async function getAllUnits(): Promise<Unit[]> {
 }
 
 // ============ DATA SELECTORS ============
+
+export interface BookingListItem {
+  reference: string;
+  customer: { id: string; name: string };
+  status: BookingStatus;
+  startDate: string;
+  endDate: string;
+  createdAt: string;
+  contactName: string;
+  deliveryAddress: string;
+  poNumber?: string;
+  total: number | null;
+  /** Not delivered although the delivery date has passed */
+  lateDelivery: boolean;
+  /** On hire past the collection date */
+  overdueCollection: boolean;
+  lines: { id: string; unitId: string; unitType: UnitType; status: BookingStatus; startDate: string; endDate: string }[];
+}
+
+/** Every booking (one item per booking, all its units), newest delivery first. */
+export async function getBookingsList(): Promise<BookingListItem[]> {
+  const db = await readDb();
+  const todayStr = today();
+  const groups = new Map<string, Booking[]>();
+  for (const b of db.bookings) groups.set(groupIdOf(b), [...(groups.get(groupIdOf(b)) ?? []), b]);
+  return [...groups.entries()]
+    .map(([reference, lines]) => {
+      const first = lines[0];
+      const live = lines.filter((l) => l.status !== 'CANCELLED');
+      const dates = (live.length ? live : lines).flatMap((l) => [l.startDate, l.endDate]).sort();
+      const priced = live.some((l) => l.rate !== undefined) || (first.quote?.extras.length ?? 0) > 0;
+      return {
+        reference,
+        customer: { id: first.customerId, name: db.customers.find((c) => c.id === first.customerId)?.name ?? 'Unknown customer' },
+        status: bookingGroupStatus(lines.map((l) => l.status)),
+        startDate: dates[0],
+        endDate: dates.at(-1)!,
+        createdAt: first.createdAt,
+        contactName: first.contactName,
+        deliveryAddress: first.deliveryAddress,
+        poNumber: first.quote?.poNumber,
+        total: priced ? quoteTotals(lines, first.quote).total : null,
+        lateDelivery: lines.some((l) => l.status === 'CONFIRMED' && l.startDate < todayStr),
+        overdueCollection: lines.some((l) => l.status === 'ON_HIRE' && l.endDate < todayStr),
+        lines: lines.map((l) => ({
+          id: l.id,
+          unitId: l.unitId,
+          unitType: db.units.find((u) => u.id === l.unitId)?.unitType ?? 'COLD_STORE',
+          status: l.status,
+          startDate: l.startDate,
+          endDate: l.endDate,
+        })),
+      };
+    })
+    .sort((a, b) => b.startDate.localeCompare(a.startDate));
+}
 
 export async function bookingsForCalendar(): Promise<
   Array<Booking & { customer: Customer; unit: Unit }>

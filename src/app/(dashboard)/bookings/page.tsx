@@ -1,30 +1,19 @@
-import { bookingsForCalendar, unitsWithStatus, getOverdueActionBookings } from '@/lib/actions';
-import { BookingsCalendar } from './bookings-calendar';
+import { bookingsForCalendar, unitsWithStatus, getOverdueActionBookings, getBookingsList } from '@/lib/actions';
+import { BookingsWorkspace } from './bookings-workspace';
 import { ActionAlerts } from '@/components/notifications/action-alerts';
 import { PageHeader } from '@/components/app/page-header';
+import { toISODate } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
 export default async function BookingsPage() {
-  const [bookings, allUnits, overdueBookings] = await Promise.all([
-    bookingsForCalendar(),
-    unitsWithStatus(),
-    getOverdueActionBookings(),
-  ]);
-
-  const scheduled = bookings.filter((b) => b.status === 'CONFIRMED').length;
-  const onHire = bookings.filter((b) => b.status === 'ON_HIRE').length;
+  const [bookings, allUnits, overdueBookings, list] = await Promise.all([bookingsForCalendar(), unitsWithStatus(), getOverdueActionBookings(), getBookingsList()]);
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Bookings"
-        description={`${onHire} on hire · ${scheduled} scheduled across ${allUnits.length} units`}
-      />
-
+      <PageHeader title="Bookings" description="Plan the fleet on the timeline, or search every booking in the list" />
       <ActionAlerts overdueBookings={overdueBookings} />
-
-      <BookingsCalendar bookings={bookings} allUnits={allUnits} />
+      <BookingsWorkspace bookings={bookings} allUnits={allUnits} list={list} today={toISODate(new Date())} />
     </div>
   );
 }

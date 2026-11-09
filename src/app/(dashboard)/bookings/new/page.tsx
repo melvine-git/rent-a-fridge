@@ -4,8 +4,9 @@ import { PageHeader } from '@/components/app/page-header';
 
 export const dynamic = 'force-dynamic';
 
-export default async function NewBookingPage({ searchParams }: { searchParams: Promise<{ customer?: string }> }) {
-  const [{ customer }, customers, allUnits] = await Promise.all([searchParams, searchCustomers(''), unitsWithStatus()]);
+export default async function NewBookingPage({ searchParams }: { searchParams: Promise<{ customer?: string; unit?: string; start?: string }> }) {
+  const [{ customer, unit, start }, customers, allUnits] = await Promise.all([searchParams, searchCustomers(''), unitsWithStatus()]);
+  const startDate = start && /^\d{4}-\d{2}-\d{2}$/.test(start) ? start : undefined;
 
   return (
     <div className="space-y-6">
@@ -14,7 +15,13 @@ export default async function NewBookingPage({ searchParams }: { searchParams: P
         title="New booking"
         description="Choose the customer and hire dates, then pick one or more available units"
       />
-      <NewBookingForm customers={customers} allUnits={allUnits} initialCustomerId={customer} />
+      <NewBookingForm
+        customers={customers}
+        allUnits={allUnits}
+        initialCustomerId={customer}
+        initialUnitId={allUnits.some((u) => u.id === unit) ? unit : undefined}
+        initialStartDate={startDate}
+      />
     </div>
   );
 }

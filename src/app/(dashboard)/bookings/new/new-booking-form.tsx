@@ -27,7 +27,7 @@ import {
 } from '@/components/bookings/booking-editors';
 import { createBooking, getAvailableUnits, addCustomer, getCustomerAddresses, addCustomerAddress, checkBookingLines } from '@/lib/actions';
 import { UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, powerShort, quoteTotals } from '@/lib/domain';
-import { formatDate, isValidW3w, normalizeW3w } from '@/lib/format';
+import { formatDate, isValidW3w, normalizeW3w, toISODate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Check, Circle, Loader2, Plus, CalendarRange } from 'lucide-react';
 import type { Customer, Unit, UnitType, CustomerAddress } from '@/types';
@@ -36,6 +36,9 @@ interface NewBookingFormProps {
   customers: Customer[];
   allUnits: Unit[];
   initialCustomerId?: string;
+  /** Pre-selected from the timeline (click on an empty day of a unit's row) */
+  initialUnitId?: string;
+  initialStartDate?: string;
 }
 
 interface Defaults {
@@ -45,7 +48,7 @@ interface Defaults {
   collectionTime: string;
 }
 
-export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBookingFormProps) {
+export function NewBookingForm({ customers, allUnits, initialCustomerId, initialUnitId, initialStartDate }: NewBookingFormProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [availableUnitIds, setAvailableUnitIds] = useState<Set<string>>(new Set());
@@ -62,8 +65,17 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId }: NewBo
   const [newAddress, setNewAddress] = useState({ label: '', address: '' });
 
   const [customerId, setCustomerId] = useState(initialCustomer?.id ?? '');
-  const [defaults, setDefaults] = useState<Defaults>({ startDate: '', endDate: '', deliveryTime: '', collectionTime: '' });
-  const [lines, setLines] = useState<LineDraft[]>([]);
+  const [defaults, setDefaults] = useState<Defaults>(() => {
+    if (!initialStartDate) return { startDate: '', endDate: '', deliveryTime: '', collectionTime: '' };
+    // A week's hire is the usual starting point; the collection date is easy to change
+    const end = new Date(`${initialStartDate}T00:00:00`);
+    end.setDate(end.getDate() + 6);
+    return { startDate: initialStartDate, endDate: toISODate(end), deliveryTime: '', collectionTime: '' };
+  });
+  const [lines, setLines] = useState<LineDraft[]>(() => {
+    const unit = allUnits.find((u) => u.id === initialUnitId);
+    return unit ? [newLine(unit, { ...defaults, tempRequired: undefined, cableLength: undefined })] : [];
+  });
   const [conflicts, setConflicts] = useState<Record<string, string | null>>({});
   // Site contact is deliberately blank: it's usually a person on site, not the hirer
   const [site, setSite] = useState<SiteDraft>({
