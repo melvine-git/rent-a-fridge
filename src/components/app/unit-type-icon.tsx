@@ -20,5 +20,5 @@ export function UnitTypeIcon({ type, className, boxed }: { type: UnitType; class
 
 /** Monospace unit code chip, e.g. CS-04 */
 export function UnitCode({ id, className }: { id: string; className?: string }) {
-  return <span className={cn('font-mono-unit text-[13px] text-foreground', className)}>{id}</span>;
+  return <span className={cn('font-mono-unit text-[13px] whitespace-nowrap text-foreground', className)}>{id}</span>;
 }
