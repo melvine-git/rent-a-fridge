@@ -1770,9 +1770,20 @@ export async function getUnitsWithHire(): Promise<UnitWithHire[]> {
   const db = await readDb();
   const todayStr = today();
   const name = (id: string) => db.customers.find((c) => c.id === id)?.name ?? 'Unknown';
+  const DAY = 86_400_000;
+  const windowEnd = Date.parse(todayStr);
+  const windowStart = windowEnd - 89 * DAY;
   return db.units
     .map((u) => {
       const hire = db.bookings.find((b) => b.unitId === u.id && b.status === 'ON_HIRE');
+      // Days actually out with customers in the last 90 days (delivered hires only)
+      const hiredDays = db.bookings
+        .filter((b) => b.unitId === u.id && (b.status === 'ON_HIRE' || b.status === 'COLLECTED'))
+        .reduce((sum, b) => {
+          const s = Math.max(Date.parse(b.startDate), windowStart);
+          const e = Math.min(Date.parse(b.endDate), windowEnd);
+          return e >= s ? sum + Math.round((e - s) / DAY) + 1 : sum;
+        }, 0);
       const next = db.bookings
         .filter((b) => b.unitId === u.id && b.status === 'CONFIRMED' && b.startDate >= todayStr)
         .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
@@ -1786,6 +1797,8 @@ export async function getUnitsWithHire(): Promise<UnitWithHire[]> {
           endDate: hire.endDate,
         },
         nextBooking: next && { bookingId: next.id, customerName: name(next.customerId), startDate: next.startDate },
+        utilisation90: Math.min(100, Math.round((hiredDays / 90) * 100)),
+        serviceDue: nextServiceDate(u),
       };
     })
     .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));

@@ -328,4 +328,8 @@ export type CustomerWithStats = Customer & {
 export type UnitWithHire = Unit & {
   currentHire?: { bookingId: string; customerName: string; customerId: string; endDate: string; startDate: string };
   nextBooking?: { bookingId: string; customerName: string; startDate: string };
+  /** Share of the last 90 days on hire (0-100) */
+  utilisation90: number;
+  /** Next service due (manual date or from the last service record) */
+  serviceDue?: string;
 };
