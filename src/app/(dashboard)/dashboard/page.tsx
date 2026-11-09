@@ -130,17 +130,18 @@ export default async function DashboardPage() {
 
       {/* Needs attention */}
       {attention.length > 0 && (
-        <section className="overflow-hidden rounded-xl border border-red-200/70 bg-gradient-to-br from-red-50/80 via-white to-white shadow-[var(--shadow-xs)]">
-          <header className="flex items-center gap-3 px-5 pt-4 pb-3">
+        <section className="overflow-hidden rounded-xl border border-red-200/70 bg-white shadow-[var(--shadow-xs)]">
+          <header className="flex items-center gap-3 border-b border-red-100 bg-red-50/60 px-5 py-3">
             <span className="flex size-7 items-center justify-center rounded-full bg-[var(--brand-red)] text-white">
               <CircleAlert className="size-4" />
             </span>
             <h2 className="text-sm font-semibold text-foreground">Needs attention</h2>
             <span className="tabular rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">{attention.length}</span>
           </header>
-          <ul className="grid gap-px bg-red-100/60 sm:grid-cols-2">
+          {/* Dividers come from the gap showing the tinted background; an odd last item spans both columns so no empty tinted cell is left */}
+          <ul className="grid gap-px bg-red-100/70 sm:grid-cols-2">
             {attention.slice(0, 6).map((a) => (
-              <li key={a.id} className="min-w-0 bg-white/90">
+              <li key={a.id} className="min-w-0 bg-white sm:last:odd:col-span-2">
                 <Link href={a.href} className="group flex items-center gap-3 px-5 py-3 transition-colors hover:bg-red-50/60">
                   <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', TONE_CLASSES[a.tone].soft)}>
                     <a.icon className={cn('size-4', TONE_CLASSES[a.tone].text)} />
@@ -155,7 +156,7 @@ export default async function DashboardPage() {
               </li>
             ))}
           </ul>
-          {attention.length > 6 && <p className="border-t border-red-100 bg-white/90 px-5 py-2 text-xs text-muted-foreground">+ {attention.length - 6} more in notifications (bell, top right)</p>}
+          {attention.length > 6 && <p className="border-t border-red-100 bg-white px-5 py-2 text-xs text-muted-foreground">+ {attention.length - 6} more in notifications (bell, top right)</p>}
         </section>
       )}
 
