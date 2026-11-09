@@ -74,7 +74,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) 
   const failed = (r: { error?: string }) => toast.error('Could not save', { description: r.error ?? 'Please try again' });
 
   const handleSaveEdit = async () => {
-    const r = await updateUnit(unit.id, { ...editForm, notes: editForm.notes.trim() || undefined, dataLoggerId: editForm.dataLoggerId.trim() || undefined });
+    const r = await updateUnit(unit.id, { ...editForm, notes: editForm.notes.trim(), dataLoggerId: editForm.dataLoggerId.trim() });
     if (r.success) {
       setIsEditing(false);
       done('Unit updated');

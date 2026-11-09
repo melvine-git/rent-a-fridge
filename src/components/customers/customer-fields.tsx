@@ -58,7 +58,8 @@ export function draftToCustomer(d: CustomerDraft): Pick<Customer, 'name' | 'phon
     country: d.address.country.trim(),
   };
   // `address` is rebuilt from invoiceAddress on the server; sent so the type is complete
-  return { name: d.name.trim(), phone: d.phone.trim(), email: t(d.email), address: invoiceAddress.line1, invoiceAddress };
+  // Empty email is sent as '' (not undefined) so clearing it actually removes it on save
+  return { name: d.name.trim(), phone: d.phone.trim(), email: d.email.trim(), address: invoiceAddress.line1, invoiceAddress };
 }
 
 export function CustomerFields({ value, onChange }: { value: CustomerDraft; onChange: (next: CustomerDraft) => void }) {

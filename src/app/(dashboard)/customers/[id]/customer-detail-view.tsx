@@ -52,7 +52,7 @@ export function CustomerDetailView({ customer, bookings, preferredUnit, units }:
       toast.error(error);
       return;
     }
-    const result = await updateCustomer(customer.id, { ...draftToCustomer(draft), xeroContactId: xeroContactId.trim() || undefined });
+    const result = await updateCustomer(customer.id, { ...draftToCustomer(draft), xeroContactId: xeroContactId.trim() });
     if (result.success) {
       setIsEditing(false);
       toast.success('Customer updated');

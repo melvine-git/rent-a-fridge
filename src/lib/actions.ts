@@ -232,6 +232,15 @@ export async function completeJobs(
   return { success: true };
 }
 
+/**
+ * Forms send '' (or null) for a field the user emptied: `undefined` is dropped when a server
+ * action's arguments are sent, so it would leave the old value in place. Remove those keys.
+ */
+function withoutCleared<T extends object>(obj: T): T {
+  for (const [k, v] of Object.entries(obj)) if (v === '' || v === null || v === undefined) delete (obj as Record<string, unknown>)[k];
+  return obj;
+}
+
 // ============ CUSTOMER ACTIONS ============
 
 /** The one-line address is derived from the structured invoice address whenever one is given. */
@@ -266,7 +275,7 @@ export async function addCustomer(
   const db = await readDb();
   const customer: Customer = {
     id: generateId('cust'),
-    ...withFormattedAddress(data),
+    ...withoutCleared(withFormattedAddress({ ...data })),
     createdAt: today(),
   };
   db.customers.push(customer);
@@ -342,10 +351,10 @@ export async function updateCustomer(
     return { success: false, error: 'Customer not found' };
   }
   
-  db.customers[index] = {
+  db.customers[index] = withoutCleared({
     ...db.customers[index],
     ...withFormattedAddress(data),
-  };
+  });
   
   await writeDb(db);
   revalidatePath('/');
@@ -363,7 +372,8 @@ export async function updateCustomerPreferences(
     return { success: false, error: 'Customer not found' };
   }
   
-  customer.preferences = { ...customer.preferences, ...preferences };
+  // The form sends the complete set, so replace rather than merge (merging could never clear a field)
+  customer.preferences = withoutCleared({ ...preferences });
   await writeDb(db);
   revalidatePath('/');
   return { success: true };
@@ -975,7 +985,7 @@ export async function updateUnit(
     return { success: false, error: 'Unit not found' };
   }
   
-  db.units[index] = { ...db.units[index], ...data };
+  db.units[index] = withoutCleared({ ...db.units[index], ...data });
   await writeDb(db);
   revalidatePath('/');
   return { success: true, unit: db.units[index] };
@@ -1019,7 +1029,8 @@ export async function updateUnitSpecifications(
     return { success: false, error: 'Unit not found' };
   }
   
-  unit.specifications = { ...unit.specifications, ...specifications };
+  // Full set from the form replaces the old one; photos are managed separately and kept
+  unit.specifications = withoutCleared({ ...specifications, photoUrls: unit.specifications?.photoUrls });
   await writeDb(db);
   revalidatePath('/');
   return { success: true };
