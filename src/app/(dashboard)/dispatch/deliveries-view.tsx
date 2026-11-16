@@ -156,6 +156,10 @@ export function DeliveriesView({ today, deliveries, collections, onHire, deliver
     saveOrder(day, [...ordered, ...run.filter((s) => !coords[s.lines[0].id])].map((s) => s.key));
     toast.success(`Run optimised by distance · about ${Math.round(distance)} km between stops${yard ? ' from the yard' : ''}`);
   };
+  const needTwo = (what: string) =>
+    toast.info(`${what} needs at least two stops on the day`, {
+      description: `${day === today ? 'Today' : dayLabel(day, { weekday: 'long', day: 'numeric', month: 'short' })} has ${plural(run.length, 'stop', 'stops')}, so there is nothing to reorder.`,
+    });
   const move = (i: number, d: number) => {
     const keys = run.map((s) => s.key);
     [keys[i], keys[i + d]] = [keys[i + d], keys[i]];
@@ -315,15 +319,15 @@ export function DeliveriesView({ today, deliveries, collections, onHire, deliver
                   </button>
                 )}
                 {!editing && (
-                  <button type="button" onClick={optimise} disabled={run.length < 2} className="inline-flex h-9 items-center gap-1.5 rounded-lg border bg-white px-3 text-[13px] font-medium transition-colors hover:bg-muted disabled:opacity-50" title="Order the stops by distance, nearest first">
+                  <button type="button" onClick={() => (run.length < 2 ? needTwo('Optimise') : optimise())} className="inline-flex h-9 items-center gap-1.5 rounded-lg border bg-white px-3 text-[13px] font-medium transition-colors hover:bg-muted" title="Order the stops by distance, nearest first">
                     <Sparkles className="size-4" /> Optimise
                   </button>
                 )}
                 <button
                   type="button"
-                  onClick={() => setEditing((e) => !e)}
-                  disabled={run.length < 2 && !editing}
-                  className={cn('inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium transition-colors disabled:opacity-50', editing ? 'border-stone-900 bg-stone-900 text-white hover:bg-stone-800' : 'bg-white hover:bg-muted')}
+                  onClick={() => (run.length < 2 && !editing ? needTwo('Edit run') : setEditing((e) => !e))}
+                  title="Reorder the stops by hand"
+                  className={cn('inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium transition-colors', editing ? 'border-stone-900 bg-stone-900 text-white hover:bg-stone-800' : 'bg-white hover:bg-muted')}
                 >
                   {editing ? <Check className="size-4" /> : <PencilLine className="size-4" />} {editing ? 'Done' : 'Edit run'}
                 </button>
