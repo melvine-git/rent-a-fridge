@@ -4,11 +4,14 @@ import { cn } from '@/lib/utils';
  * Wintry mountain backdrop for the top of Dispatch. If a photo is supplied it is shown on the
  * right instead, fading into the page; either way the bottom blends into the page background.
  */
-export function HeroScene({ image, className }: { image?: string; className?: string }) {
+export function HeroScene({ image, layout = 'right', className }: { image?: string; /** `full`: a landscape across the whole band; `right`: a subject photo on the right */ layout?: 'right' | 'full'; className?: string }) {
   return (
     <div className={cn('pointer-events-none absolute inset-0 overflow-hidden', className)} aria-hidden>
       <div className="absolute inset-0 bg-gradient-to-b from-[#e8edf3] via-[#f1f4f7] to-background" />
-      {image ? (
+      {image && layout === 'full' ? (
+        // eslint-disable-next-line @next/next/no-img-element -- static file in /public
+        <img src={image} alt="" className="absolute inset-0 h-full w-full object-cover object-[center_42%] [mask-image:linear-gradient(to_bottom,black_55%,transparent_100%)]" />
+      ) : image ? (
         // eslint-disable-next-line @next/next/no-img-element -- static file in /public
         <img
           src={image}

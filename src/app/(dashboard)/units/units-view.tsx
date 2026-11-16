@@ -148,7 +148,7 @@ export function UnitsView({ units }: UnitsViewProps) {
     <div className="space-y-6">
       {/* Hero: title and the three equipment categories over the mountain scene */}
       <section className="relative -mx-4 -mt-6 px-4 pt-8 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:-mt-8 lg:px-8 lg:pt-10">
-        <HeroScene />
+        <HeroScene image="/fleet/hero-mountains.jpg" layout="full" />
         <div className="relative">
           <h1 className="font-display text-[34px] leading-tight font-bold tracking-[-0.03em] text-foreground sm:text-[40px]">Fleet</h1>
           <p className="mt-1 text-[15px] text-muted-foreground">
