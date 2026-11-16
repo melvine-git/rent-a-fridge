@@ -1,8 +1,8 @@
 'use client';
 
-import 'leaflet/dist/leaflet.css';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef } from 'react';
-import type { LayerGroup, Map as LeafletMap, Marker } from 'leaflet';
+import type { GeoJSONSource, Map as MlMap, Marker } from 'maplibre-gl';
 import { Minus, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -22,7 +22,19 @@ export type MapPoint = {
 
 export type RouteLeg = { from: [number, number]; to: [number, number]; done: boolean };
 
-type Leaflet = typeof import('leaflet');
+type Maplibre = typeof import('maplibre-gl');
+
+// Free vector tiles (no key, commercial use allowed); labels and icons are hidden below
+const STYLE_URL = 'https://tiles.openfreemap.org/styles/positron';
+// Quiet, near-monochrome palette: white roads on soft grey, faint greens and blues
+const PAINT: Record<string, [string, string | number][]> = {
+  background: [['background-color', '#f4f4f2']],
+  water: [['fill-color', '#dfe6ea']],
+  park: [['fill-color', '#e7ede5'], ['fill-opacity', 0.9]],
+  landcover_wood: [['fill-color', '#e5ebe2'], ['fill-opacity', 0.8]],
+  landuse_residential: [['fill-color', '#f0f0ee'], ['fill-opacity', 0.6]],
+  building: [['fill-color', '#ececea']],
+};
 
 const HOME_SVG =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>';
@@ -42,9 +54,7 @@ function pinHtml(p: MapPoint, active: boolean) {
   return `<div class="map-pin map-pin--stop${state === 'todo' ? '' : ` map-pin--${state}`}${on}">${inner}</div>`;
 }
 
-const SIZE = { yard: 28, site: 24, stop: 26, next: 30 };
-
-/** Light street map with the yard, the day's numbered stops, the van route and units out on site. */
+/** Muted street map with the yard, the day's numbered stops, the van route and units out on site. */
 export function FleetMap({
   points,
   route,
@@ -64,8 +74,8 @@ export function FleetMap({
   controlsClassName?: string;
 }) {
   const el = useRef<HTMLDivElement>(null);
-  const ctx = useRef<{ L: Leaflet; map: LeafletMap; layer: LayerGroup } | null>(null);
-  const markers = useRef(new Map<string, Marker>());
+  const ctx = useRef<{ ml: Maplibre; map: MlMap; ready: boolean } | null>(null);
+  const markers = useRef<Marker[]>([]);
   const latest = useRef({ points, route, activeId, onSelect, fitKey });
   const fitted = useRef<string | null>(null);
 
@@ -75,63 +85,116 @@ export function FleetMap({
 
   function draw() {
     const c = ctx.current;
-    if (!c) return;
-    const { L, layer } = c;
+    if (!c?.ready) return;
+    const { ml, map } = c;
     const { points, route, activeId } = latest.current;
-    layer.clearLayers();
-    markers.current.clear();
 
-    for (const leg of route) {
-      L.polyline([leg.from, leg.to], leg.done ? { color: '#57534e', weight: 3, opacity: 0.7, dashArray: '2 7', lineCap: 'round' } : { color: '#E3000F', weight: 4, opacity: 0.85, lineCap: 'round' }).addTo(layer);
-    }
-    for (const p of points) {
-      const size = p.kind === 'stop' ? (p.state === 'next' ? SIZE.next : SIZE.stop) : SIZE[p.kind];
-      const icon = L.divIcon({ className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2], html: pinHtml(p, p.id === activeId) });
-      const m = L.marker([p.lat, p.lng], {
-        icon,
-        title: p.title,
-        keyboard: true,
-        zIndexOffset: p.kind === 'stop' ? (p.state === 'next' ? 1000 : 500) : p.kind === 'yard' ? 200 : 0,
-      })
-        .bindTooltip(escapeHtml(p.title), { direction: 'top', offset: [0, -size / 2 - 2], className: 'map-tag', permanent: p.id === activeId })
-        .on('click', () => latest.current.onSelect?.(p.id));
-      m.addTo(layer);
-      markers.current.set(p.id, m);
-    }
+    (map.getSource('route') as GeoJSONSource | undefined)?.setData({
+      type: 'FeatureCollection',
+      features: route.map((leg) => ({
+        type: 'Feature',
+        properties: { done: leg.done },
+        geometry: { type: 'LineString', coordinates: [[leg.from[1], leg.from[0]], [leg.to[1], leg.to[0]]] },
+      })),
+    });
+
+    for (const m of markers.current) m.remove();
+    markers.current = points.map((p) => {
+      const active = p.id === activeId;
+      const node = document.createElement('div');
+      node.className = 'map-marker';
+      node.title = p.title;
+      node.innerHTML = `${active ? `<div class="map-tag">${escapeHtml(p.title)}</div>` : ''}${pinHtml(p, active)}`;
+      node.style.zIndex = String(active ? 3000 : p.kind === 'stop' ? (p.state === 'next' ? 2000 : 1000) : p.kind === 'yard' ? 500 : 100);
+      node.addEventListener('click', (e) => {
+        e.stopPropagation();
+        latest.current.onSelect?.(p.id);
+      });
+      return new ml.Marker({ element: node, anchor: 'center' }).setLngLat([p.lng, p.lat]).addTo(map);
+    });
   }
 
   function fit() {
     const c = ctx.current;
-    if (!c) return;
-    const { L, map } = c;
+    if (!c?.ready) return;
+    const { ml, map } = c;
     const pts = latest.current.points;
     const wide = window.matchMedia('(min-width: 1024px)').matches;
     // Leave room for the floating panels on wide screens
-    const opts = wide ? { paddingTopLeft: [370, 80] as [number, number], paddingBottomRight: [400, 70] as [number, number], maxZoom: 14 } : { padding: [36, 36] as [number, number], maxZoom: 14 };
-    if (pts.length === 0) map.setView([54.597, -5.93], 12);
-    else if (pts.length === 1) map.setView([pts[0].lat, pts[0].lng], 13);
-    else map.fitBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lng])), opts);
+    const padding = wide ? { top: 90, bottom: 80, left: 410, right: 440 } : 40;
+    if (pts.length === 0) map.jumpTo({ center: [-5.93, 54.597], zoom: 11.5 });
+    else if (pts.length === 1) map.jumpTo({ center: [pts[0].lng, pts[0].lat], zoom: 12.5 });
+    else {
+      const b = new ml.LngLatBounds();
+      for (const p of pts) b.extend([p.lng, p.lat]);
+      map.fitBounds(b, { padding, maxZoom: 13.5, duration: 0 });
+    }
   }
 
   // Create the map once
   useEffect(() => {
     let cancelled = false;
-    let created: LeafletMap | null = null;
-    import('leaflet').then(({ default: L }) => {
+    let created: MlMap | null = null;
+    let resizer: ResizeObserver | null = null;
+    import('maplibre-gl').then((ml) => {
       if (cancelled || !el.current) return;
-      created = L.map(el.current, { zoomControl: false, scrollWheelZoom: false, attributionControl: true }).setView([54.597, -5.93], 12);
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      }).addTo(created);
-      created.attributionControl.setPrefix(false);
-      ctx.current = { L, map: created, layer: L.layerGroup().addTo(created) };
-      draw();
-      fit();
-      fitted.current = latest.current.fitKey;
+      created = new ml.Map({
+        container: el.current,
+        style: STYLE_URL,
+        center: [-5.93, 54.597],
+        zoom: 11.5,
+        attributionControl: { compact: true },
+        scrollZoom: false,
+        dragRotate: false,
+        pitchWithRotate: false,
+        touchPitch: false,
+      });
+      created.touchZoomRotate.disableRotation();
+      const map = created;
+      // Keep the canvas matched to its box, and keep the stops framed until the user moves the map
+      let moved = false;
+      map.on('dragstart', () => (moved = true));
+      map.on('zoomstart', (e) => e.originalEvent && (moved = true));
+      resizer = new ResizeObserver(() => {
+        map.resize();
+        if (!moved) fit();
+      });
+      resizer.observe(el.current);
+      ctx.current = { ml, map, ready: false };
+      map.on('load', () => {
+        if (cancelled) return;
+        for (const layer of map.getStyle().layers ?? []) {
+          if (layer.type === 'symbol') map.setLayoutProperty(layer.id, 'visibility', 'none');
+          for (const [prop, value] of PAINT[layer.id] ?? []) map.setPaintProperty(layer.id, prop, value);
+        }
+        map.addSource('route', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addLayer({
+          id: 'route-done',
+          type: 'line',
+          source: 'route',
+          filter: ['==', ['get', 'done'], true],
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': '#57534e', 'line-width': 2.5, 'line-opacity': 0.7, 'line-dasharray': [0.6, 2.4] },
+        });
+        map.addLayer({
+          id: 'route-todo',
+          type: 'line',
+          source: 'route',
+          filter: ['==', ['get', 'done'], false],
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': '#E3000F', 'line-width': 2.5, 'line-opacity': 0.75 },
+        });
+        ctx.current = { ml, map, ready: true };
+        draw();
+        fit();
+        fitted.current = latest.current.fitKey;
+      });
     });
     return () => {
       cancelled = true;
+      resizer?.disconnect();
+      for (const m of markers.current) m.remove();
+      markers.current = [];
       created?.remove();
       ctx.current = null;
     };
@@ -139,7 +202,7 @@ export function FleetMap({
 
   useEffect(() => {
     draw();
-    if (ctx.current && fitted.current !== fitKey) {
+    if (ctx.current?.ready && fitted.current !== fitKey) {
       fit();
       fitted.current = fitKey;
     }
@@ -148,16 +211,22 @@ export function FleetMap({
   // Bring the selected pin into view
   useEffect(() => {
     const c = ctx.current;
-    const m = activeId ? markers.current.get(activeId) : undefined;
-    if (c && m && !c.map.getBounds().pad(-0.15).contains(m.getLatLng())) c.map.panTo(m.getLatLng(), { animate: true });
+    const p = activeId ? latest.current.points.find((x) => x.id === activeId) : undefined;
+    if (!c?.ready || !p) return;
+    const pt = c.map.project([p.lng, p.lat]);
+    const { clientWidth: w, clientHeight: h } = c.map.getContainer();
+    if (pt.x < w * 0.15 || pt.x > w * 0.85 || pt.y < h * 0.15 || pt.y > h * 0.85) c.map.easeTo({ center: [p.lng, p.lat], duration: 500 });
   }, [activeId]);
 
-  const zoom = (d: number) => ctx.current?.map.setZoom(ctx.current.map.getZoom() + d);
+  const zoom = (d: number) => (d > 0 ? ctx.current?.map.zoomIn() : ctx.current?.map.zoomOut());
   const btn = 'flex size-9 items-center justify-center text-foreground transition-colors hover:bg-muted';
 
   return (
     <div className={cn('relative', className)}>
-      <div ref={el} className="absolute inset-0 z-0" role="region" aria-label="Map of units on site and the day's run" />
+      {/* MapLibre makes its container position:relative, so it sits inside a sized wrapper */}
+      <div className="absolute inset-0 z-0 bg-[#f4f4f2]">
+        <div ref={el} className="h-full w-full" role="region" aria-label="Map of units on site and the day's run" />
+      </div>
       <div className={cn('absolute z-[400] flex flex-col divide-y overflow-hidden rounded-lg border bg-white shadow-[var(--shadow-md)]', controlsClassName)}>
         <button type="button" className={btn} onClick={() => zoom(1)} aria-label="Zoom in">
           <Plus className="size-4" />
