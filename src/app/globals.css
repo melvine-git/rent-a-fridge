@@ -275,3 +275,10 @@
 .map-tag::before {
   display: none;
 }
+
+@keyframes fridge-wobble {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-9deg); }
+  50% { transform: rotate(7deg); }
+  75% { transform: rotate(-4deg); }
+}

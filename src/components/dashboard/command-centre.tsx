@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Avatar } from '@/components/app/avatar';
-import { UnitTypeIcon } from '@/components/app/unit-type-icon';
+import { UNIT_TYPE_ICON } from '@/components/app/unit-type-icon';
 import { accessoryItems } from '@/components/jobs/job-drawer';
 import { FleetMap, type MapPoint, type RouteLeg } from './fleet-map';
 import { STATUS_META, TONE_CLASSES, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, nextServiceDate, powerShort, unitDisplayStatus, type UnitDisplayStatus } from '@/lib/domain';
@@ -296,6 +296,50 @@ function Key({ swatch, children }: { swatch: React.ReactNode; children: React.Re
   );
 }
 
+const STATUS_DOT: Record<UnitDisplayStatus, string> = { ON_HIRE: 'bg-sky-500', AVAILABLE: 'bg-emerald-500', MAINTENANCE: 'bg-amber-500', BREAKDOWN: 'bg-red-500' };
+// A small hover motion per type: the freezer's snowflake turns, the cold store lifts, the fridge wobbles
+const HOVER_MOTION: Record<Unit['unitType'], string> = {
+  CHEST_FREEZER: 'duration-700 group-hover:rotate-[120deg]',
+  COLD_STORE: 'duration-300 group-hover:-translate-y-[2px] group-hover:scale-110',
+  UPRIGHT_FRIDGE: 'group-hover:animate-[fridge-wobble_0.6s_ease-in-out]',
+};
+
+/** Unit photo if there is one, otherwise a soft tile with the type icon; the corner dot shows status. */
+function FleetAvatar({ unit, active, alert, size = 'md' }: { unit: Unit; active?: boolean; alert?: boolean; size?: 'md' | 'lg' }) {
+  const Icon = UNIT_TYPE_ICON[unit.unitType];
+  const photo = unit.specifications?.photoUrls?.[0];
+  const box = size === 'lg' ? 'size-12 rounded-2xl' : 'size-10 rounded-xl';
+  const dot = alert ? 'bg-red-500' : STATUS_DOT[unitDisplayStatus(unit)];
+  return (
+    <span className="relative shrink-0">
+      {photo ? (
+        // eslint-disable-next-line @next/next/no-img-element -- served from the private uploads route
+        <img
+          src={photo}
+          alt=""
+          loading="lazy"
+          className={cn(box, 'border object-cover shadow-[0_1px_2px_rgb(0_0_0/0.08)] transition-transform duration-300 group-hover:scale-105', active && 'ring-2 ring-stone-900 ring-offset-1')}
+        />
+      ) : (
+        <span
+          className={cn(
+            box,
+            'flex items-center justify-center border bg-gradient-to-b shadow-[inset_0_1px_0_rgb(255_255_255/0.9),0_1px_2px_rgb(0_0_0/0.06)] transition-all duration-300',
+            active
+              ? 'border-stone-900 from-stone-700 to-stone-900 text-white shadow-[0_6px_14px_-6px_rgb(0_0_0/0.5)]'
+              : 'border-stone-200 from-white to-stone-100 text-stone-700 group-hover:-translate-y-px group-hover:border-stone-300 group-hover:shadow-[inset_0_1px_0_white,0_6px_12px_-6px_rgb(0_0_0/0.25)]'
+          )}
+        >
+          <Icon className={cn(size === 'lg' ? 'size-5' : 'size-[18px]', 'transition-transform ease-out', HOVER_MOTION[unit.unitType])} strokeWidth={1.75} aria-hidden />
+        </span>
+      )}
+      <span className={cn('absolute -right-0.5 -bottom-0.5 flex size-3 rounded-full ring-2 ring-white', dot)}>
+        {alert && <span className={cn('absolute inline-flex size-full animate-ping rounded-full opacity-60', dot)} />}
+      </span>
+    </span>
+  );
+}
+
 function UnitRow({
   unit,
   hire,
@@ -324,12 +368,12 @@ function UnitRow({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'relative grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-3 rounded-xl px-2.5 py-2.5 text-left transition-colors',
+        'group relative grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-3 rounded-xl px-2.5 py-2.5 text-left transition-colors',
         active ? 'bg-red-50/80' : 'hover:bg-muted/60'
       )}
     >
       {active && <span className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-[var(--brand-red)]" />}
-      <UnitTypeIcon type={unit.unitType} boxed className="size-9 rounded-full" />
+      <FleetAvatar unit={unit} active={active} alert={overdue || status === 'BREAKDOWN'} />
       <span className="min-w-0">
         <span className="font-mono-unit block text-[13px] font-semibold text-foreground">{unit.id}</span>
         <span className="block truncate text-xs text-muted-foreground">{sub}</span>
@@ -604,8 +648,9 @@ function UnitPanel({
 
   return (
     <>
-      <header className="flex items-start justify-between gap-3 px-5 pt-4">
-        <div className="min-w-0">
+      <header className="group flex items-start justify-between gap-3 px-5 pt-4">
+        <FleetAvatar unit={unit} size="lg" alert={overdue || status === 'BREAKDOWN'} />
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h2 className="font-mono-unit text-lg font-semibold tracking-tight text-foreground">{unit.id}</h2>
             <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset', overdue ? TONE_CLASSES.danger.badge : TONE_CLASSES[meta.tone].badge)}>{overdue ? 'Overdue' : meta.label}</span>
