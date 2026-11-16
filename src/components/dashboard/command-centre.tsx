@@ -616,14 +616,14 @@ function HireProgress({
       </div>
       <div className="mt-0.5 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[17px] leading-snug font-bold text-foreground">{isCollection ? 'Collection' : 'Delivery'}</p>
+          <p className="text-[15px] leading-snug font-semibold text-foreground">{isCollection ? 'Collection' : 'Delivery'}</p>
           <p className="line-clamp-2 text-xs text-muted-foreground">
             {b.customer.name} · {b.deliveryAddress}
           </p>
         </div>
         <div className="shrink-0 text-right">
-          <p className="font-mono-unit text-[22px] leading-none font-bold text-[var(--brand-red)]">{s.done ? hhmm(s.done.at) : (s.time ?? 'Any')}</p>
-          <p className="mt-1.5 text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">{s.done ? 'Done' : due <= today ? 'Today' : due === tomorrow ? 'Tomorrow' : formatDate(due)}</p>
+          <p className="font-mono-unit text-[15px] leading-snug font-semibold text-[var(--brand-red)]">{s.done ? hhmm(s.done.at) : (s.time ?? 'Any')}</p>
+          <p className="mt-0.5 text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">{s.done ? 'Done' : due <= today ? 'Today' : due === tomorrow ? 'Tomorrow' : formatDate(due)}</p>
         </div>
       </div>
       <div className="mt-3.5 flex gap-1.5">
