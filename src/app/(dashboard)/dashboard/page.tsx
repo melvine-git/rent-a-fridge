@@ -1,12 +1,12 @@
 import Link from 'next/link';
 import { getDashboardData } from '@/lib/actions';
 import { CommandCentre } from '@/components/dashboard/command-centre';
+import { GreetingHero, type HeroIssue } from '@/components/dashboard/greeting-hero';
 import { unitDisplayStatus } from '@/lib/domain';
 import { groupVisits } from '@/lib/jobs';
 import { extractPostcode, geocodePostcodes, YARD_ADDRESS, type LatLng } from '@/lib/geo';
 import { greeting } from '@/lib/format';
 import { previewData } from './preview-data';
-import { cn } from '@/lib/utils';
 import { Truck } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -44,30 +44,24 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const late = upcoming.filter((u) => u.startDate < today).length;
   const overdue = collections.filter((b) => b.endDate < today).length;
   const breakdown = units.filter((u) => unitDisplayStatus(u) === 'BREAKDOWN').length;
-  const problems = [
-    late && `${plural(late, 'delivery is', 'deliveries are')} late`,
-    overdue && `${plural(overdue, 'collection is', 'collections are')} overdue`,
-    breakdown && `${plural(breakdown, 'unit is', 'units are')} broken down`,
-  ].filter(Boolean) as string[];
+  const issues: HeroIssue[] = [
+    late ? { label: `${plural(late, 'delivery', 'deliveries')} late`, href: '/deliveries', tone: 'danger' as const } : null,
+    overdue ? { label: `${plural(overdue, 'collection', 'collections')} overdue`, href: '/collections', tone: 'warning' as const } : null,
+    breakdown ? { label: `${plural(breakdown, 'unit', 'units')} broken down`, href: '/units', tone: 'danger' as const } : null,
+  ].filter((x) => x !== null);
   const todayJobs =
-    groupVisits(deliveries, (b) => b.startDate).filter((l) => l[0].startDate === today).length +
+    groupVisits(deliveries, (b) => b.startDate).filter((l) => l[0].startDate <= today).length +
     groupVisits(collections, (b) => b.endDate).filter((l) => l[0].endDate <= today).length;
-  const summary = problems.length
-    ? `${problems.join(', ').replace(/, ([^,]*)$/, ' and $1')}.`
-    : todayJobs
-      ? `Everything is on track. ${plural(todayJobs, 'job', 'jobs')} on today's run.`
-      : 'Everything is on track. Nothing on the run today.';
 
   return (
     <div className="space-y-6 lg:space-y-8">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-medium tracking-[0.14em] text-muted-foreground uppercase">
-            {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-          </p>
-          <h1 className="mt-1.5 text-[28px] leading-tight font-semibold tracking-tight text-foreground">{greeting()}</h1>
-          <p className={cn('mt-1 text-[15px]', problems.length ? 'text-foreground/80' : 'text-muted-foreground')}>{summary}</p>
-        </div>
+        <GreetingHero
+          date={new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          greeting={greeting()}
+          issues={issues}
+          jobsToday={todayJobs}
+        />
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <Link
             href={preview ? '/dashboard' : '/dashboard?preview=1'}
