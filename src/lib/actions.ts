@@ -1708,6 +1708,10 @@ export async function getDashboardData() {
         return line ? { kind: d.type === 'DELIVERY' ? ('delivery' as const) : ('collection' as const), at: d.completedAt!, signedBy: d.signedBy, line } : null;
       })
       .filter((d) => !!d),
+    // Whoever has today's jobs, otherwise the first driver
+    driver: ((id) => db.staff.find((s) => s.id === id) ?? db.staff.find((s) => s.role === 'DRIVER') ?? null)(
+      db.dockets.find((d) => d.scheduledDate <= todayStr && (d.status !== 'COMPLETED' || d.completedAt?.slice(0, 10) === todayStr))?.staffId
+    ),
     nextOut: Object.fromEntries(
       details(db.bookings.filter((b) => b.status === 'CONFIRMED').sort((a, b) => b.startDate.localeCompare(a.startDate))).map((b) => [
         b.unitId,

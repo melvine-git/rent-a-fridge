@@ -5,7 +5,7 @@ import type { CommandCentreProps } from '@/components/dashboard/command-centre';
  * A made-up but realistic Belfast day, built from copies of the real units, so the
  * dashboard map can be previewed with `?preview=1`. Nothing here is saved.
  */
-export function previewData(realUnits: Unit[], today: string, tomorrow: string): Omit<CommandCentreProps, 'coords' | 'yard'> {
+export function previewData(realUnits: Unit[], today: string, tomorrow: string): Omit<CommandCentreProps, 'coords' | 'yard' | 'driver'> {
   const shift = (days: number) => {
     const d = new Date(`${today}T00:00:00Z`);
     d.setUTCDate(d.getUTCDate() + days);

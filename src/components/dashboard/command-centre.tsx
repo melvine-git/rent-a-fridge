@@ -10,7 +10,7 @@ import { STATUS_META, TONE_CLASSES, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, nextServ
 import { bookingRef, groupVisits } from '@/lib/jobs';
 import { daysBetween, daysFromToday, formatDate, formatDayDate, formatPhone } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { ArrowUpRight, CalendarPlus, Check, Navigation, Phone, Thermometer, TriangleAlert, Wrench, X, Zap } from 'lucide-react';
+import { ArrowUpRight, CalendarPlus, Check, ChevronLeft, ChevronRight, MessageSquare, Navigation, Phone, Thermometer, TriangleAlert, Wrench, X, Zap } from 'lucide-react';
 import type { BookingWithDetails, DeliveryChecklist, Unit } from '@/types';
 
 type LatLng = { lat: number; lng: number };
@@ -32,6 +32,7 @@ export type CommandCentreProps = {
   /** Map position by booking line id */
   coords: Record<string, LatLng>;
   yard: (LatLng & { address: string }) | null;
+  driver: { name: string; phone: string } | null;
 };
 
 type Stop = {
@@ -63,7 +64,7 @@ const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: 
 const mapsUrl = (address: string) => `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
 
 export function CommandCentre(props: CommandCentreProps) {
-  const { today, tomorrow, units, hires, deliveries, collections, doneToday, delivered, nextOut, coords, yard } = props;
+  const { today, tomorrow, units, hires, deliveries, collections, doneToday, delivered, nextOut, coords, yard, driver } = props;
   const [day, setDay] = useState<'today' | 'tomorrow'>('today');
   const [filter, setFilter] = useState<'ALL' | UnitDisplayStatus>('ALL');
   const [unitId, setUnitId] = useState<string | null>(null);
@@ -275,7 +276,7 @@ export function CommandCentre(props: CommandCentreProps) {
           {unit ? (
             <UnitPanel unit={unit} hire={unitHire} next={nextOut[unit.id]} left={unitHire ? delivered[unitHire.id] : undefined} today={today} onClose={() => setUnitId(null)} />
           ) : (
-            <RunPanel run={run} day={day} setDay={setDay} today={today} tomorrow={tomorrow} now={now} yard={yard} activeId={stopId} onSelect={(id) => setStopId((cur) => (cur === id ? null : id))} />
+            <RunPanel run={run} day={day} setDay={setDay} today={today} tomorrow={tomorrow} now={now} yard={yard} driver={driver} activeId={stopId} onSelect={(id) => setStopId((cur) => (cur === id ? null : id))} />
           )}
         </aside>
       </div>
@@ -395,6 +396,9 @@ function untilLabel(time: string | undefined, now: Date | null) {
   return mins >= 0 ? { big: fmt(mins), small: `ETA ${time}` } : { big: time, small: `${fmt(-mins)} behind` };
 }
 
+type Driver = { name: string; phone: string } | null;
+type Marker = 'yard' | 'done' | 'next' | 'todo' | 'late';
+
 function RunPanel({
   run,
   day,
@@ -403,6 +407,7 @@ function RunPanel({
   tomorrow,
   now,
   yard,
+  driver,
   activeId,
   onSelect,
 }: {
@@ -413,16 +418,18 @@ function RunPanel({
   tomorrow: string;
   now: Date | null;
   yard: CommandCentreProps['yard'];
+  driver: Driver;
   activeId: string | null;
   onSelect: (id: string) => void;
 }) {
   const done = run.filter((s) => s.done).length;
   const next = run.find((s) => s.state === 'next') ?? (day === 'tomorrow' ? run[0] : undefined);
+  const unitsTotal = run.reduce((n, s) => n + s.lines.length, 0);
   const out = run.filter((s) => s.kind === 'delivery' && !s.done).reduce((n, s) => n + s.lines.length, 0);
   const back = run.filter((s) => s.kind === 'collection' && !s.done).reduce((n, s) => n + s.lines.length, 0);
   const items = run.filter((s) => !s.done).reduce((n, s) => n + s.items.length, 0);
-  const status = !run.length ? 'Quiet day' : done === run.length ? 'Run complete' : day === 'tomorrow' ? 'Planned' : done ? 'On the road' : 'Not started';
-  const statusCls = !run.length || done === run.length ? 'bg-emerald-50 text-emerald-700' : done ? 'bg-sky-50 text-sky-700' : 'bg-stone-100 text-stone-700';
+  const status = !run.length ? 'Quiet day' : done === run.length ? 'Complete' : day === 'tomorrow' ? 'Planned' : done ? 'On route' : 'Not started';
+  const statusCls = run.length && (done === run.length || (done && day === 'today')) ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/20' : 'bg-stone-100 text-stone-600 ring-stone-500/15';
   const pending = run.filter((s) => !s.done);
   const routeUrl =
     pending.length > 0
@@ -430,49 +437,70 @@ function RunPanel({
           pending.length > 1 ? `&waypoints=${encodeURIComponent(pending.slice(0, -1).map((s) => s.lines[0].deliveryAddress).join('|'))}` : ''
         }`
       : null;
-  const eta = next && day === 'today' ? untilLabel(next.time, now) : null;
+  const eta = next && day === 'today' && next.due >= today ? untilLabel(next.time, now) : null;
+  const other = day === 'today' ? 'tomorrow' : 'today';
+  const roundBtn = 'flex size-9 shrink-0 items-center justify-center rounded-full border bg-white text-foreground transition-colors hover:bg-muted';
+  const dark = (s?: Stop) => !!s && (s.state === 'done' || s.state === 'next');
 
   return (
     <>
-      <header className="flex items-start justify-between gap-3 px-5 pt-4">
-        <div className="min-w-0">
-          <h2 className="text-lg font-semibold tracking-tight whitespace-nowrap text-foreground">{day === 'today' ? "Today's run" : "Tomorrow's run"}</h2>
-          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap', statusCls)}>{status}</span>
-            {formatDayDate(day === 'today' ? today : tomorrow)} · {run.length ? plural(run.length, 'stop') : 'No jobs'}
-          </p>
+      <header className="px-5 pt-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2.5">
+              <h2 className="font-display text-[22px] leading-tight font-bold tracking-[-0.02em] whitespace-nowrap text-foreground">{day === 'today' ? "Today's run" : "Tomorrow's run"}</h2>
+              <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ring-1 ring-inset', statusCls)}>{status}</span>
+            </div>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {formatDayDate(day === 'today' ? today : tomorrow)} · {plural(run.length, 'stop')} · {plural(unitsTotal, 'unit')}
+            </p>
+          </div>
+          <button type="button" onClick={() => setDay(other)} className={roundBtn} aria-label={`Show ${other}'s run`} title={`Show ${other}'s run`}>
+            {day === 'today' ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
+          </button>
         </div>
-        <div className="flex shrink-0 rounded-lg bg-muted p-0.5 text-xs font-medium">
-          {(['today', 'tomorrow'] as const).map((d) => (
-            <button key={d} type="button" onClick={() => setDay(d)} className={cn('rounded-md px-2.5 py-1 capitalize transition-colors', day === d ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
-              {d}
-            </button>
-          ))}
-        </div>
+
+        {driver && (
+          <div className="mt-4 flex items-center gap-3 rounded-xl border p-3">
+            <Avatar name={driver.name} className="size-10 rounded-full" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-foreground">{driver.name}</p>
+              <p className="truncate text-xs text-muted-foreground">Driver · {formatPhone(driver.phone)}</p>
+            </div>
+            <a href={`tel:${driver.phone}`} className={roundBtn} aria-label={`Call ${driver.name}`}>
+              <Phone className="size-4" />
+            </a>
+            <a href={`sms:${driver.phone}`} className={roundBtn} aria-label={`Text ${driver.name}`}>
+              <MessageSquare className="size-4" />
+            </a>
+          </div>
+        )}
       </header>
 
-      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-4">
+      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-5 pt-5 pb-4">
         {next ? (
-          <div className="rounded-xl border bg-stone-50/70 p-3.5">
+          <>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{day === 'today' ? 'Next stop' : 'First stop'}</p>
-                <p className="mt-0.5 truncate text-[15px] font-semibold text-foreground">{next.lines[0].customer.name}</p>
+                <p className="text-xs text-muted-foreground">{day === 'today' ? 'Next stop' : 'First stop'}</p>
+                <p className="mt-0.5 truncate text-[17px] leading-snug font-bold text-foreground">{next.lines[0].customer.name}</p>
                 <p className="truncate text-xs text-muted-foreground">
-                  {next.kind === 'delivery' ? 'Deliver' : 'Collect'} {next.lines.map((l) => l.unit.id).join(' + ')} · {next.lines[0].deliveryAddress}
+                  {next.lines[0].deliveryAddress.split(',')[0]} · {next.kind === 'delivery' ? 'deliver' : 'collect'} {plural(next.lines.length, 'unit')}
                 </p>
               </div>
               <div className="shrink-0 text-right">
-                <p className="tabular text-xl leading-none font-semibold text-[var(--brand-red)]">{eta ? eta.big : (next.time ?? 'Any')}</p>
-                <p className={cn('mt-1 text-[11px]', next.due < today ? 'font-medium text-red-600' : 'text-muted-foreground')}>{next.due < today ? `Due ${formatDate(next.due)}` : (eta?.small ?? 'scheduled')}</p>
+                <p className="font-display tabular text-[22px] leading-none font-bold tracking-tight text-[var(--brand-red)]">{eta ? eta.big : (next.time ?? 'Any time')}</p>
+                <p className={cn('mt-1.5 text-[11px]', next.due < today ? 'font-medium text-red-600' : 'text-muted-foreground')}>
+                  {next.due < today ? `Due ${formatDate(next.due)}` : eta?.small || (next.time ? `ETA ${next.time}` : '')}
+                </p>
               </div>
             </div>
-            <div className="mt-3 flex gap-1">
+            <div className="mt-3.5 flex gap-1.5">
               {run.map((s) => (
-                <span key={s.id} className={cn('h-1 flex-1 rounded-full', s.done ? 'bg-stone-900' : s === next ? 'bg-[var(--brand-red)]' : 'bg-stone-200')} />
+                <span key={s.id} className={cn('h-1.5 flex-1 rounded-full', s.done ? 'bg-stone-900' : s === next ? 'bg-[var(--brand-red)]' : 'bg-stone-200')} />
               ))}
             </div>
-          </div>
+          </>
         ) : (
           <div className="rounded-xl border border-dashed p-4 text-center">
             <Check className="mx-auto size-5 text-emerald-600" />
@@ -481,43 +509,47 @@ function RunPanel({
           </div>
         )}
 
-        <dl className="mt-3 grid grid-cols-3 gap-2">
-          <Tile label="Going out" value={plural(out, 'unit')} />
-          <Tile label="Coming back" value={plural(back, 'unit')} />
+        <dl className="mt-4 grid grid-cols-3 gap-2">
+          <Tile label="Going out" value={out} />
+          <Tile label="Coming back" value={back} />
           <Tile label="Accessories" value={items} />
         </dl>
 
         {run.length > 0 && (
           <>
-            <div className="mt-5 mb-2 flex items-baseline justify-between">
+            <div className="mt-5 mb-1 flex items-baseline justify-between">
               <h3 className="text-sm font-semibold text-foreground">Stops</h3>
               <span className="tabular text-xs text-muted-foreground">
                 {done} of {run.length} done
               </span>
             </div>
-            <ol className="relative">
-              <span className="absolute top-3 bottom-3 left-[9px] w-px bg-stone-200" aria-hidden />
-              <TimelineRow marker={<span className="size-2.5 rounded-[3px] bg-stone-900" />} title="Yard" sub={day === 'today' ? 'Load up and leave' : 'Start of the run'} />
-              {run.map((s) => (
-                <StopItem key={s.id} stop={s} today={today} active={s.id === activeId} onSelect={() => onSelect(s.id)} />
+            <ol>
+              <TimelineItem marker="yard" title="Yard" sub={yard ? yard.address.split(',')[0] : 'Start of the run'} lineDark={dark(run[0])} />
+              {run.map((s, i) => (
+                <StopItem key={s.id} stop={s} today={today} active={s.id === activeId} onSelect={() => onSelect(s.id)} last={i === run.length - 1} lineDark={dark(run[i + 1])} />
               ))}
-              <TimelineRow marker={<span className="size-2.5 rounded-[3px] border-2 border-stone-900 bg-white" />} title="Back to yard" sub={back ? `Unload ${plural(back, 'unit')}` : 'End of the run'} />
             </ol>
           </>
         )}
       </div>
 
-      <footer className="grid grid-cols-2 gap-2 border-t px-5 py-3.5">
-        <Link href="/deliveries" className="inline-flex h-10 items-center justify-center rounded-lg bg-stone-900 text-sm font-medium text-white transition-colors hover:bg-stone-800">
-          Open dispatch
-        </Link>
-        {routeUrl ? (
-          <a href={routeUrl} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border text-sm font-medium transition-colors hover:bg-muted">
-            <Navigation className="size-4" /> Full route
+      <footer className="grid grid-cols-[1fr_auto] gap-2 border-t px-5 py-4">
+        {driver ? (
+          <a href={`sms:${driver.phone}`} className="inline-flex h-11 items-center justify-center rounded-xl bg-stone-900 text-sm font-semibold text-white transition-colors hover:bg-stone-800">
+            Message driver
           </a>
         ) : (
-          <Link href="/bookings/new" className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border text-sm font-medium transition-colors hover:bg-muted">
-            <CalendarPlus className="size-4" /> New booking
+          <Link href="/deliveries" className="inline-flex h-11 items-center justify-center rounded-xl bg-stone-900 text-sm font-semibold text-white transition-colors hover:bg-stone-800">
+            Open dispatch
+          </Link>
+        )}
+        {routeUrl ? (
+          <a href={routeUrl} target="_blank" rel="noopener noreferrer" className="inline-flex h-11 items-center justify-center rounded-xl border px-5 text-sm font-semibold transition-colors hover:bg-muted">
+            Route
+          </a>
+        ) : (
+          <Link href="/deliveries" className="inline-flex h-11 items-center justify-center rounded-xl border px-5 text-sm font-semibold transition-colors hover:bg-muted">
+            Dispatch
           </Link>
         )}
       </footer>
@@ -527,58 +559,113 @@ function RunPanel({
 
 function Tile({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="rounded-lg border px-3 py-2">
+    <div className="rounded-xl border px-3 py-2.5">
       <dt className="text-[11px] text-muted-foreground">{label}</dt>
-      <dd className="tabular mt-0.5 text-sm font-semibold text-foreground">{value}</dd>
+      <dd className="tabular mt-0.5 text-[17px] leading-tight font-bold text-foreground">{value}</dd>
     </div>
   );
 }
 
-function TimelineRow({ marker, title, sub }: { marker: React.ReactNode; title: string; sub: string }) {
-  return (
-    <li className="relative flex items-center gap-3 py-2">
-      <span className="relative z-10 flex size-5 items-center justify-center bg-white">{marker}</span>
-      <span className="min-w-0">
-        <span className="block text-[13px] font-medium text-foreground">{title}</span>
-        <span className="block text-xs text-muted-foreground">{sub}</span>
+function MarkerDot({ kind }: { kind: Marker }) {
+  if (kind === 'yard')
+    return (
+      <span className="flex size-5 items-center justify-center rounded-full bg-stone-900">
+        <span className="size-1.5 rounded-full bg-white" />
       </span>
+    );
+  if (kind === 'done')
+    return (
+      <span className="flex size-5 items-center justify-center rounded-full bg-stone-900 text-white">
+        <Check className="size-3" strokeWidth={3} />
+      </span>
+    );
+  if (kind === 'next')
+    return (
+      <span className="flex size-5 items-center justify-center rounded-full border-2 border-[var(--brand-red)] bg-white">
+        <span className="size-2 rounded-full bg-[var(--brand-red)]" />
+      </span>
+    );
+  return <span className={cn('block size-5 rounded-full border-2 bg-white', kind === 'late' ? 'border-red-400' : 'border-stone-300')} />;
+}
+
+function TimelineItem({
+  marker,
+  title,
+  sub,
+  time,
+  lineDark,
+  last,
+  active,
+  onClick,
+  titleClass,
+  subClass,
+  children,
+}: {
+  marker: Marker;
+  title: string;
+  sub: string;
+  time?: string;
+  lineDark: boolean;
+  last?: boolean;
+  active?: boolean;
+  onClick?: () => void;
+  titleClass?: string;
+  subClass?: string;
+  children?: React.ReactNode;
+}) {
+  const body = (
+    <>
+      <span className="relative z-10 mt-0.5 shrink-0">
+        <MarkerDot kind={marker} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={cn('block truncate text-[13px] font-semibold text-foreground', titleClass)}>{title}</span>
+        <span className={cn('block truncate text-xs text-muted-foreground', subClass)}>{sub}</span>
+      </span>
+      {time && <span className={cn('font-mono-unit shrink-0 pt-0.5 text-xs', marker === 'next' ? 'font-semibold text-[var(--brand-red)]' : 'text-muted-foreground')}>{time}</span>}
+    </>
+  );
+  return (
+    <li className="relative">
+      {!last && <span className={cn('absolute top-[32px] -bottom-[8px] left-[9px] w-0.5 rounded-full', lineDark ? 'bg-stone-900' : 'bg-stone-200')} aria-hidden />}
+      {onClick ? (
+        <button type="button" onClick={onClick} aria-expanded={active} className={cn('-mx-2 flex w-[calc(100%+1rem)] items-start gap-3 rounded-lg px-2 py-2.5 text-left transition-colors', active ? 'bg-stone-50' : 'hover:bg-stone-50/70')}>
+          {body}
+        </button>
+      ) : (
+        <div className="flex items-start gap-3 py-2.5">{body}</div>
+      )}
+      {children}
     </li>
   );
 }
 
-function StopItem({ stop: s, today, active, onSelect }: { stop: Stop; today: string; active: boolean; onSelect: () => void }) {
+function StopItem({ stop: s, today, active, onSelect, last, lineDark }: { stop: Stop; today: string; active: boolean; onSelect: () => void; last: boolean; lineDark: boolean }) {
   const b = s.lines[0];
   const units = s.lines.map((l) => l.unit.id).join(' + ');
   const late = !s.done && s.due < today;
+  const verb = s.kind === 'delivery' ? 'Deliver' : 'Collect';
   const sub = s.done
-    ? `${s.kind === 'delivery' ? 'Delivered' : 'Collected'} ${units}${s.done.signedBy ? ` · signed ${s.done.signedBy}` : ''}`
-    : `${s.kind === 'delivery' ? 'Deliver' : 'Collect'} ${units}${late ? ` · was due ${formatDate(s.due)}` : ''}`;
-  const time = s.done ? hhmm(s.done.at) : (s.time ?? 'Any');
+    ? `${s.kind === 'delivery' ? 'Delivered' : 'Collected'}${s.done.signedBy ? ` · signed by ${s.done.signedBy}` : ` · ${units}`}`
+    : s.state === 'next'
+      ? `Next · ${verb.toLowerCase()} ${units}`
+      : `${verb} ${units}${late ? ` · was due ${formatDate(s.due)}` : s.items.length ? ` · ${s.items.length} item${s.items.length === 1 ? '' : 's'}` : ''}`;
 
   return (
-    <li className="relative">
-      <button type="button" onClick={onSelect} aria-expanded={active} className={cn('flex w-full items-start gap-3 rounded-lg py-2 pr-1 text-left transition-colors', active ? 'bg-stone-50' : 'hover:bg-stone-50/70')}>
-        <span className="relative z-10 mt-0.5 flex size-5 shrink-0 items-center justify-center bg-white">
-          {s.state === 'done' ? (
-            <span className="flex size-5 items-center justify-center rounded-full bg-stone-900 text-white">
-              <Check className="size-3" strokeWidth={3} />
-            </span>
-          ) : s.state === 'next' ? (
-            <span className="flex size-5 items-center justify-center rounded-full border-2 border-[var(--brand-red)] bg-white">
-              <span className="size-2 rounded-full bg-[var(--brand-red)]" />
-            </span>
-          ) : (
-            <span className={cn('tabular flex size-5 items-center justify-center rounded-full border-2 bg-white text-[10px] font-bold', late ? 'border-red-500 text-red-600' : 'border-stone-300 text-stone-500')}>{s.order}</span>
-          )}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-semibold text-foreground">{b.customer.name}</span>
-          <span className={cn('block truncate text-xs', late ? 'text-red-600' : 'text-muted-foreground')}>{sub}</span>
-        </span>
-        <span className={cn('tabular shrink-0 text-xs font-medium', s.state === 'next' ? 'text-[var(--brand-red)]' : 'text-muted-foreground')}>{time}</span>
-      </button>
+    <TimelineItem
+      marker={s.state === 'late' ? 'late' : s.state}
+      title={b.customer.name}
+      sub={sub}
+      time={s.done ? hhmm(s.done.at) : (s.time ?? '—')}
+      lineDark={lineDark}
+      last={last}
+      active={active}
+      onClick={onSelect}
+      titleClass={s.state === 'next' ? 'text-[var(--brand-red)]' : undefined}
+      subClass={late ? 'text-red-600' : undefined}
+    >
       {active && (
-        <div className="mb-2 ml-8 space-y-2 rounded-lg border bg-white p-3 text-xs">
+        <div className="relative z-10 mb-2 ml-8 space-y-2 rounded-lg border bg-white p-3 text-xs">
           <p className="text-muted-foreground">{b.deliveryAddress}</p>
           {(b.contactName || b.contactPhone) && (
             <p className="flex items-center justify-between gap-2">
@@ -608,7 +695,7 @@ function StopItem({ stop: s, today, active, onSelect }: { stop: Stop; today: str
           </div>
         </div>
       )}
-    </li>
+    </TimelineItem>
   );
 }
 

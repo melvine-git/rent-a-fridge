@@ -84,7 +84,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </p>
       )}
 
-      <CommandCentre {...centre} coords={coords} yard={yard} />
+      <CommandCentre {...centre} coords={coords} yard={yard} driver={data.driver ? { name: data.driver.name, phone: data.driver.phone } : null} />
     </div>
   );
 }
