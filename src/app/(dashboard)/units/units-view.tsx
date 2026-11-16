@@ -348,7 +348,7 @@ export function UnitsView({ units }: UnitsViewProps) {
 function UnitImage({ unit, className, fit = 'contain' }: { unit: UnitWithHire; className?: string; fit?: 'contain' | 'cover' }) {
   const photo = unit.specifications?.photoUrls?.[0];
   return (
-    <div className={cn('overflow-hidden bg-gradient-to-b from-white to-stone-100', className)}>
+    <div className={cn('overflow-hidden bg-white', className)}>
       {photo ? (
         // eslint-disable-next-line @next/next/no-img-element -- served from the private uploads route
         <img src={photo} alt={unit.id} loading="lazy" className={cn('h-full w-full', fit === 'cover' ? 'object-cover' : 'object-contain p-2')} />

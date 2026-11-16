@@ -1,13 +1,21 @@
 import { cn } from '@/lib/utils';
 import type { UnitType } from '@/types';
 
-/** Clean product-style drawing of each unit type, used when a unit has no photo. */
+/** Stock photos per type (in /public/fleet); types without one use the drawings below. */
+const PHOTO: Partial<Record<UnitType, string>> = { UPRIGHT_FRIDGE: '/fleet/upright-fridge.png' };
+
+/** Product image of each unit type, used when a unit has no photo of its own. */
 export function UnitIllustration({ type, className }: { type: UnitType; className?: string }) {
+  const photo = PHOTO[type];
+  if (photo)
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- small static file in /public
+      <img src={photo} alt={LABEL[type]} className={cn('h-full w-full object-contain py-2 drop-shadow-[0_6px_6px_rgb(0_0_0/0.12)]', className)} />
+    );
   return (
     <svg viewBox="0 0 240 160" className={cn('h-full w-full', className)} role="img" aria-label={LABEL[type]}>
       <ellipse cx="120" cy="148" rx="92" ry="7" fill="#000" opacity="0.08" />
       {type === 'COLD_STORE' && <ColdStore />}
-      {type === 'UPRIGHT_FRIDGE' && <UprightFridge />}
       {type === 'CHEST_FREEZER' && <ChestFreezer />}
     </svg>
   );
@@ -42,55 +50,6 @@ function ColdStore() {
       <circle cx="56" cy="51.5" r="1.4" fill="#34c759" />
       <rect x="44" y="136" width="128" height="6" fill="#d4d9de" />
       <polygon points="172,136 206,122 206,127 172,142" fill="#aeb5be" />
-    </g>
-  );
-}
-
-function UprightFridge() {
-  const shelves = [56, 78, 100, 122];
-  const bottle = (x: number, y: number, c: string, h = 14) => <rect key={`${x}-${y}`} x={x} y={y - h} width="5" height={h} rx="1.5" fill={c} opacity="0.85" />;
-  return (
-    <g>
-      <defs>
-        <linearGradient id="uf-glass" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#dcebf3" />
-          <stop offset="0.5" stopColor="#c4dbe8" />
-          <stop offset="1" stopColor="#e6f1f7" />
-        </linearGradient>
-        <linearGradient id="uf-shine" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="#fff" stopOpacity="0" />
-          <stop offset="0.5" stopColor="#fff" stopOpacity="0.55" />
-          <stop offset="1" stopColor="#fff" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <rect x="70" y="10" width="100" height="134" rx="6" fill="#26292d" />
-      <rect x="74" y="14" width="92" height="14" rx="3" fill="#121416" />
-      <rect x="86" y="19" width="40" height="3" rx="1.5" fill="#e30613" opacity="0.85" />
-      {[76, 121].map((x) => (
-        <g key={x}>
-          <rect x={x} y="32" width="43" height="106" rx="2" fill="url(#uf-glass)" stroke="#0f1113" strokeWidth="2.5" />
-          {shelves.map((y) => (
-            <line key={y} x1={x + 3} y1={y} x2={x + 40} y2={y} stroke="#8fa9b8" strokeWidth="1.2" />
-          ))}
-          {bottle(x + 6, 56, '#3b82f6')}
-          {bottle(x + 14, 56, '#ef4444', 12)}
-          {bottle(x + 22, 56, '#22c55e')}
-          {bottle(x + 30, 56, '#f59e0b', 11)}
-          {bottle(x + 8, 78, '#64748b', 12)}
-          {bottle(x + 17, 78, '#3b82f6')}
-          {bottle(x + 27, 78, '#ef4444', 13)}
-          {bottle(x + 6, 100, '#22c55e', 12)}
-          {bottle(x + 16, 100, '#f59e0b')}
-          {bottle(x + 26, 100, '#64748b', 12)}
-          {bottle(x + 10, 122, '#3b82f6', 12)}
-          {bottle(x + 22, 122, '#ef4444', 13)}
-          <rect x={x + 4} y="34" width="12" height="102" fill="url(#uf-shine)" />
-        </g>
-      ))}
-      <rect x="114" y="70" width="3" height="34" rx="1.5" fill="#cfd4d9" />
-      <rect x="123" y="70" width="3" height="34" rx="1.5" fill="#cfd4d9" />
-      <rect x="78" y="142" width="8" height="4" rx="1" fill="#1a1c1f" />
-      <rect x="154" y="142" width="8" height="4" rx="1" fill="#1a1c1f" />
     </g>
   );
 }
