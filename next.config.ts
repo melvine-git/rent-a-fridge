@@ -10,6 +10,9 @@ const nextConfig: NextConfig = {
     serverActions: {
       // Unit photo uploads (up to 8 MB each, several at once)
       bodySizeLimit: "25mb",
+      // The in-editor preview proxies 127.0.0.1:<port> to localhost; without this every
+      // form action from the preview (uploads, saves) is rejected as cross-site. Dev only.
+      ...(process.env.NODE_ENV === "development" ? { allowedOrigins: ["127.0.0.*"] } : {}),
     },
   },
 };
