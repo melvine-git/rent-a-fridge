@@ -8,10 +8,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field, selectClass, textareaClass } from '@/components/app/field';
 import { removeMaintenanceAttachment, saveMaintenanceRecord } from '@/lib/actions';
 import { formatFileSize, toISODate } from '@/lib/format';
+import { UPLOAD_LIMIT_BYTES, formatMB, shrinkImage } from '@/lib/compress-image';
 import { FileText, Image as ImageIcon, Loader2, Paperclip, Trash2, X } from 'lucide-react';
 import type { Attachment, MaintenanceRecord, Unit } from '@/types';
 
-const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPT = 'application/pdf,image/jpeg,image/png,image/webp,image/gif';
 
 export function AttachmentLinks({ files, onRemove }: { files?: Attachment[]; onRemove?: (a: Attachment) => void }) {
@@ -98,12 +98,25 @@ export function ServiceRecordDialog({ open, onOpenChange, onSaved, units, unitId
   const [existing, setExisting] = useState<Attachment[]>(record?.attachments ?? []);
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((p) => ({ ...p, [k]: v }));
 
-  const addFiles = (list: FileList | null) => {
+  const addFiles = async (list: FileList | null) => {
     const picked = Array.from(list ?? []);
-    const bad = picked.find((f) => f.size > MAX_BYTES);
-    if (bad) toast.error(`${bad.name} is larger than 10 MB`);
-    setFiles((p) => [...p, ...picked.filter((f) => f.size <= MAX_BYTES)]);
     if (fileRef.current) fileRef.current.value = '';
+    // Photos are shrunk in the browser; everything sent with one record must stay under the host's upload limit
+    const ready = await Promise.all(picked.map((f) => shrinkImage(f).catch(() => f)));
+    setFiles((current) => {
+      const next = [...current];
+      for (const f of ready) {
+        const total = next.reduce((n, x) => n + x.size, 0) + f.size;
+        if (total > UPLOAD_LIMIT_BYTES) {
+          toast.error(`${f.name} can't be attached`, {
+            description: f.size > UPLOAD_LIMIT_BYTES ? `It is ${formatMB(f.size)}; files must be under ${formatMB(UPLOAD_LIMIT_BYTES)}.` : `Attachments on one save must total under ${formatMB(UPLOAD_LIMIT_BYTES)}. Save, then add more by opening the record again.`,
+          });
+          continue;
+        }
+        next.push(f);
+      }
+      return next;
+    });
   };
 
   const removeExisting = async (a: Attachment) => {
@@ -135,7 +148,7 @@ export function ServiceRecordDialog({ open, onOpenChange, onSaved, units, unitId
           nextServiceDate: form.nextServiceDate || undefined,
         },
         files.length ? data : undefined
-      );
+      ).catch(() => ({ success: false, error: 'The connection dropped or the upload was rejected. Please try again.' }));
       if (r.success) {
         toast.success(record ? 'Service record updated' : `Service logged for ${unitId}`);
         onSaved();
@@ -220,7 +233,7 @@ export function ServiceRecordDialog({ open, onOpenChange, onSaved, units, unitId
                 ))}
               </ul>
             )}
-            {!existing.length && !files.length && <p className="text-xs text-muted-foreground">Delivery notes, manual dockets or outsourced work. PDF or image, up to 10 MB each.</p>}
+            {!existing.length && !files.length && <p className="text-xs text-muted-foreground">Delivery notes, manual dockets or outsourced work. PDF or image; photos are resized automatically, up to 4 MB in total per save.</p>}
           </div>
         </div>
         <DialogFooter>

@@ -8,34 +8,45 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Panel } from '@/components/app/panel';
 import { addUnitPhotos, removeUnitPhoto } from '@/lib/actions';
 import { ImagePlus, Images, Loader2, Trash2 } from 'lucide-react';
-
-const MAX_BYTES = 8 * 1024 * 1024;
+import { UPLOAD_LIMIT_BYTES, formatMB, shrinkImage } from '@/lib/compress-image';
 
 export function UnitPhotos({ unitId, photos }: { unitId: string; photos: string[] }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [isUploading, startUpload] = useTransition();
+  const [progress, setProgress] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
 
-  const upload = (files: FileList | null) => {
-    if (!files?.length) return;
-    const tooBig = Array.from(files).find((f) => f.size > MAX_BYTES);
-    if (tooBig) {
-      toast.error(`${tooBig.name} is larger than 8 MB`);
-      return;
-    }
-    const data = new FormData();
-    Array.from(files).forEach((f) => data.append('photos', f));
+  const upload = (list: FileList | null) => {
+    const files = Array.from(list ?? []);
+    if (inputRef.current) inputRef.current.value = '';
+    if (!files.length) return;
     startUpload(async () => {
-      const result = await addUnitPhotos(unitId, data);
-      if (result.success) {
-        toast.success(`${files.length} photo${files.length > 1 ? 's' : ''} added`);
-        router.refresh();
-      } else {
-        toast.error('Upload failed', { description: result.error });
+      let added = 0;
+      // One photo per request keeps each upload under the host's size limit
+      for (const [i, original] of files.entries()) {
+        setProgress(files.length > 1 ? `Uploading ${i + 1} of ${files.length}…` : 'Uploading…');
+        try {
+          const file = await shrinkImage(original);
+          if (file.size > UPLOAD_LIMIT_BYTES) {
+            toast.error(`${original.name} is too large`, { description: `It is ${formatMB(file.size)}; photos must be under ${formatMB(UPLOAD_LIMIT_BYTES)}.` });
+            continue;
+          }
+          const data = new FormData();
+          data.append('photos', file);
+          const result = await addUnitPhotos(unitId, data);
+          if (result.success) added++;
+          else toast.error(`Could not upload ${original.name}`, { description: result.error });
+        } catch {
+          toast.error(`Could not upload ${original.name}`, { description: 'The connection dropped or the file was rejected. Please try again.' });
+        }
       }
-      if (inputRef.current) inputRef.current.value = '';
+      setProgress(null);
+      if (added) {
+        toast.success(`${added} photo${added > 1 ? 's' : ''} added`);
+        router.refresh();
+      }
     });
   };
 
@@ -69,7 +80,7 @@ export function UnitPhotos({ unitId, photos }: { unitId: string; photos: string[
           />
           <Button variant="outline" size="sm" disabled={isUploading} onClick={() => inputRef.current?.click()} className="h-8 gap-1 px-2.5 text-xs">
             {isUploading ? <Loader2 className="animate-spin" /> : <ImagePlus />}
-            {isUploading ? 'Uploading…' : 'Add photos'}
+            {isUploading ? (progress ?? 'Uploading…') : 'Add photos'}
           </Button>
         </>
       }
@@ -82,7 +93,7 @@ export function UnitPhotos({ unitId, photos }: { unitId: string; photos: string[
         >
           <Images className="size-6" />
           <span>Add photos of the unit</span>
-          <span className="text-xs">JPG, PNG, WebP or GIF up to 8 MB each</span>
+          <span className="text-xs">JPG, PNG, WebP or GIF · large photos are resized automatically</span>
         </button>
       ) : (
         <ul className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-4">
