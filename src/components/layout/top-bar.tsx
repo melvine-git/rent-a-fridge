@@ -11,7 +11,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   bookings: 'Bookings',
   dispatch: 'Dispatch',
   customers: 'Customers',
-  units: 'Units',
+  units: 'Fleet',
   maintenance: 'Maintenance',
   new: 'New booking',
 };

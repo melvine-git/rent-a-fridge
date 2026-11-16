@@ -37,7 +37,7 @@ function buildNav(counts: ShellData['counts']): { section: string; items: NavIte
     {
       section: 'Fleet',
       items: [
-        { href: '/units', label: 'Units', icon: Box },
+        { href: '/units', label: 'Fleet', icon: Box },
         { href: '/maintenance', label: 'Maintenance', icon: Wrench, count: counts.serviceDue, urgent: true },
       ],
     },

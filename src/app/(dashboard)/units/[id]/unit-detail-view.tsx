@@ -31,14 +31,15 @@ interface Props {
   currentBooking: BookingWithCustomer | null;
 }
 
-type Tab = 'overview' | 'bom' | 'bookings' | 'maintenance';
+export type UnitTab = 'overview' | 'bom' | 'bookings' | 'maintenance';
+type Tab = UnitTab;
 
 const dims = (d?: { length: number; width: number; height: number }) =>
   d ? `${d.length.toLocaleString()} × ${d.width.toLocaleString()} × ${d.height.toLocaleString()} mm` : undefined;
 
-export function UnitDetailView({ unit, bookingHistory, currentBooking }: Props) {
+export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTab }: Props & { initialTab?: UnitTab }) {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>('overview');
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'overview');
   const [isEditing, setIsEditing] = useState(false);
   const [showSpecsEdit, setShowSpecsEdit] = useState(false);
   const [showAddBOM, setShowAddBOM] = useState(false);

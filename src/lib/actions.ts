@@ -1862,6 +1862,8 @@ export async function getUnitsWithHire(): Promise<UnitWithHire[]> {
         ...u,
         currentHire: hire && {
           bookingId: hire.id,
+          reference: groupIdOf(hire),
+          site: hire.deliveryAddress,
           customerId: hire.customerId,
           customerName: name(hire.customerId),
           startDate: hire.startDate,
