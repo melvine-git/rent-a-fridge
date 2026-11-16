@@ -205,9 +205,6 @@ export function CommandCentre(props: CommandCentreProps) {
         <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex justify-center lg:right-[404px] lg:left-[372px] lg:top-4">
           <div className="pointer-events-auto flex items-center divide-x rounded-full border bg-white/95 text-xs shadow-[var(--shadow-md)] backdrop-blur">
             <span className="flex items-center gap-2 px-3.5 py-2 font-medium text-foreground">
-              <span className="relative flex size-2">
-                <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
-              </span>
               Live
               <span className="tabular font-normal text-muted-foreground">{now ? `${formatDayDate(now)} · ${hhmm(now.toISOString())}` : formatDayDate(today)}</span>
             </span>
@@ -295,7 +292,6 @@ function Key({ swatch, children }: { swatch: React.ReactNode; children: React.Re
   );
 }
 
-const STATUS_DOT: Record<UnitDisplayStatus, string> = { ON_HIRE: 'bg-sky-500', AVAILABLE: 'bg-emerald-500', MAINTENANCE: 'bg-amber-500', BREAKDOWN: 'bg-red-500' };
 // A small hover motion per type: the freezer's snowflake turns, the cold store lifts, the fridge wobbles
 const HOVER_MOTION: Record<Unit['unitType'], string> = {
   CHEST_FREEZER: 'duration-700 group-hover:rotate-[120deg]',
@@ -304,11 +300,10 @@ const HOVER_MOTION: Record<Unit['unitType'], string> = {
 };
 
 /** Unit photo if there is one, otherwise a soft tile with the type icon; the corner dot shows status. */
-function FleetAvatar({ unit, active, alert, size = 'md' }: { unit: Unit; active?: boolean; alert?: boolean; size?: 'md' | 'lg' }) {
+function FleetAvatar({ unit, active, size = 'md' }: { unit: Unit; active?: boolean; size?: 'md' | 'lg' }) {
   const Icon = UNIT_TYPE_ICON[unit.unitType];
   const photo = unit.specifications?.photoUrls?.[0];
   const box = size === 'lg' ? 'size-12 rounded-2xl' : 'size-10 rounded-xl';
-  const dot = alert ? 'bg-red-500' : STATUS_DOT[unitDisplayStatus(unit)];
   return (
     <span className="relative shrink-0">
       {photo ? (
@@ -332,8 +327,6 @@ function FleetAvatar({ unit, active, alert, size = 'md' }: { unit: Unit; active?
           <Icon className={cn(size === 'lg' ? 'size-5' : 'size-[18px]', 'transition-transform ease-out', HOVER_MOTION[unit.unitType])} strokeWidth={1.75} aria-hidden />
         </span>
       )}
-      <span className={cn('absolute -right-0.5 -bottom-0.5 flex size-3 rounded-full ring-2 ring-white', dot)}>
-      </span>
     </span>
   );
 }
@@ -371,7 +364,7 @@ function UnitRow({
       )}
     >
       {active && <span className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-[var(--brand-red)]" />}
-      <FleetAvatar unit={unit} active={active} alert={overdue || status === 'BREAKDOWN'} />
+      <FleetAvatar unit={unit} active={active} />
       <span className="min-w-0">
         <span className="font-mono-unit block text-[13px] font-semibold text-foreground">{unit.id}</span>
         <span className="block truncate text-xs text-muted-foreground">{sub}</span>
@@ -647,7 +640,7 @@ function UnitPanel({
   return (
     <>
       <header className="group flex items-start justify-between gap-3 px-5 pt-4">
-        <FleetAvatar unit={unit} size="lg" alert={overdue || status === 'BREAKDOWN'} />
+        <FleetAvatar unit={unit} size="lg" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h2 className="font-mono-unit text-lg font-semibold tracking-tight text-foreground">{unit.id}</h2>

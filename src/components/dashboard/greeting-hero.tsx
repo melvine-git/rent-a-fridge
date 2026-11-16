@@ -70,9 +70,6 @@ export function GreetingHero({ date, greeting, issues, jobsToday }: { date: stri
                 transition={{ type: 'spring', stiffness: 380, damping: 24, delay: after + i * 0.08 }}
               >
                 <Link href={it.href} className={cn('group inline-flex h-8 items-center gap-2 rounded-full border pr-2.5 pl-3 text-[13px] font-medium transition-colors', PILL)}>
-                  <span className="relative flex size-2">
-                    <span className="relative inline-flex size-2 rounded-full bg-[var(--brand-red)]" />
-                  </span>
                   {it.label}
                   <ArrowRight className="size-3.5 text-muted-foreground opacity-60 transition-transform group-hover:translate-x-0.5 group-hover:opacity-100" />
                 </Link>
