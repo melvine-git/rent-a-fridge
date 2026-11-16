@@ -494,7 +494,7 @@ function RunPanel({
             Message driver
           </a>
         ) : (
-          <Link href="/deliveries" className="inline-flex h-11 items-center justify-center rounded-xl bg-stone-900 text-sm font-semibold text-white transition-colors hover:bg-stone-800">
+          <Link href="/dispatch" className="inline-flex h-11 items-center justify-center rounded-xl bg-stone-900 text-sm font-semibold text-white transition-colors hover:bg-stone-800">
             Open dispatch
           </Link>
         )}
@@ -503,7 +503,7 @@ function RunPanel({
             Route
           </a>
         ) : (
-          <Link href="/deliveries" className="inline-flex h-11 items-center justify-center rounded-xl border px-5 text-sm font-semibold transition-colors hover:bg-muted">
+          <Link href="/dispatch" className="inline-flex h-11 items-center justify-center rounded-xl border px-5 text-sm font-semibold transition-colors hover:bg-muted">
             Dispatch
           </Link>
         )}

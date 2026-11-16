@@ -31,7 +31,7 @@ function buildNav(counts: ShellData['counts']): { section: string; items: NavIte
       section: 'Operations',
       items: [
         { href: '/bookings', label: 'Bookings', icon: CalendarDays, count: counts.actionsOverdue, urgent: true },
-        { href: '/deliveries', label: 'Dispatch', icon: Truck, count: counts.deliveriesToday + counts.collectionsDue, urgent: counts.collectionsDue > 0 },
+        { href: '/dispatch', label: 'Dispatch', icon: Truck, count: counts.deliveriesToday + counts.collectionsDue, urgent: counts.collectionsDue > 0 },
       ],
     },
     {

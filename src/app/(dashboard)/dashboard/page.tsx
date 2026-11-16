@@ -46,8 +46,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const overdue = collections.filter((b) => b.endDate < today).length;
   const breakdown = units.filter((u) => unitDisplayStatus(u) === 'BREAKDOWN').length;
   const issues: HeroIssue[] = [
-    late ? { label: `${plural(late, 'delivery', 'deliveries')} late`, href: '/deliveries', tone: 'danger' as const } : null,
-    overdue ? { label: `${plural(overdue, 'collection', 'collections')} overdue`, href: '/deliveries', tone: 'warning' as const } : null,
+    late ? { label: `${plural(late, 'delivery', 'deliveries')} late`, href: '/dispatch', tone: 'danger' as const } : null,
+    overdue ? { label: `${plural(overdue, 'collection', 'collections')} overdue`, href: '/dispatch', tone: 'warning' as const } : null,
     breakdown ? { label: `${plural(breakdown, 'unit', 'units')} broken down`, href: '/units', tone: 'danger' as const } : null,
   ].filter((x) => x !== null);
   const todayJobs =
@@ -71,7 +71,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             {preview ? 'Show live data' : 'Preview with sample day'}
           </Link>
           <Link
-            href="/deliveries"
+            href="/dispatch"
             className="inline-flex h-9 items-center gap-1.5 rounded-lg border bg-white px-3.5 text-sm font-medium shadow-[var(--shadow-xs)] transition-colors hover:bg-muted"
           >
             <Truck className="size-4" /> Open dispatch
