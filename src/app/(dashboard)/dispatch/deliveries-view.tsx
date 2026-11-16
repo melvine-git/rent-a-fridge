@@ -11,7 +11,7 @@ import { JobDrawer, accessoryItems, type JobTarget, type JobType } from '@/compo
 import { powerShort } from '@/lib/domain';
 import { hireSteps, type LineJob } from '@/lib/hire-steps';
 import { bookingRef, groupVisits, visitOf } from '@/lib/jobs';
-import { formatDate, formatPhone, w3wUrl } from '@/lib/format';
+import { formatDate, formatPhone, toISODate, w3wUrl } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { BookingWithDetails, DeliveryChecklist, Staff } from '@/types';
 import {
@@ -20,6 +20,7 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpFromLine,
+  ArrowUpRight,
   Box,
   CalendarCheck,
   Check,
@@ -32,6 +33,7 @@ import {
   Package,
   PackageCheck,
   PencilLine,
+  PenLine,
   Phone,
   RotateCcw,
   Sparkles,
@@ -56,6 +58,7 @@ interface DeliveriesViewProps {
   delivered: Record<string, DeliveryChecklist | undefined>;
   completed: Completed[];
   collectedHistory: { id: string; unitId: string; customer: string; signedBy: string; completedAt: string; href: string }[];
+  history: { id: string; kind: JobType; at: string; signedBy: string; hasSignature: boolean; line: Job }[];
   doneToday: { deliveries: number; collections: number };
   jobs: Record<string, LineJob[]>;
   staff: Staff[];
@@ -74,7 +77,11 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 const byStart = (b: Job) => b.startDate;
 const byEnd = (b: Job) => b.endDate;
 const ORDER_KEY = 'raf-dispatch-order';
-const WEEKS = 4;
+const WEEKS_AHEAD = 4;
+const WEEKS_BACK = 12;
+const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+type DoneStop = Stop & { done: { at: string; signedBy: string; hasSignature: boolean } };
 
 /** Straight-line distance in km. */
 function km(a: LatLng, b: LatLng) {
@@ -83,7 +90,7 @@ function km(a: LatLng, b: LatLng) {
   return 12742 * Math.asin(Math.sqrt(h));
 }
 
-export function DeliveriesView({ today, deliveries, collections, onHire, delivered, collectedHistory, doneToday, jobs, staff, coords, yard, heroImage }: DeliveriesViewProps) {
+export function DeliveriesView({ today, deliveries, collections, onHire, delivered, collectedHistory, history, doneToday, jobs, staff, coords, yard, heroImage }: DeliveriesViewProps) {
   const router = useRouter();
   const [job, setJob] = useState<JobTarget | null>(null);
   const [day, setDay] = useState(today);
@@ -123,7 +130,21 @@ export function DeliveriesView({ today, deliveries, collections, onHire, deliver
   const custom = order[day];
   const run = custom ? [...timeOrder].sort((a, b) => (custom.indexOf(a.key) + 1 || 999) - (custom.indexOf(b.key) + 1 || 999)) : timeOrder;
   const overdueCount = stops.filter((s) => s.overdue).length;
-  const sel = run.find((s) => s.key === selKey) ?? run[0];
+  // Jobs signed off on a day (one entry per booking visit), oldest first
+  const doneOn = (d: string): DoneStop[] => {
+    const groups = new Map<string, DoneStop>();
+    for (const h of history) {
+      if (toISODate(new Date(h.at)) !== d) continue;
+      const key = `done-${h.kind}-${bookingRef(h.line)}`;
+      const g = groups.get(key);
+      if (g) g.lines.push(h.line);
+      else groups.set(key, { key, kind: h.kind, date: d, time: hhmm(h.at), lines: [h.line], overdue: false, done: { at: h.at, signedBy: h.signedBy, hasSignature: h.hasSignature } });
+    }
+    return [...groups.values()].sort((a, b) => a.done.at.localeCompare(b.done.at));
+  };
+  const past = day < today;
+  const doneList = day <= today ? doneOn(day) : [];
+  const sel = [...run, ...doneList].find((s) => s.key === selKey) ?? run[0] ?? doneList[0];
 
   const open = (lines: Job[], type: JobType) => setJob({ bookings: lines, type, delivered });
   const toItems = (list: Stop[]) =>
@@ -259,10 +280,11 @@ export function DeliveriesView({ today, deliveries, collections, onHire, deliver
 
           {/* Day rail */}
           <div className="flex items-center gap-2">
-            <RoundButton icon={ChevronLeft} label="Previous week" disabled={week === 0} onClick={() => setWeek((w) => w - 1)} />
+            <RoundButton icon={ChevronLeft} label="Previous week" disabled={week === -WEEKS_BACK} onClick={() => setWeek((w) => Math.max(-WEEKS_BACK, w - 1))} />
             <div className="flex flex-1 gap-2 overflow-x-auto py-1 [scrollbar-width:none]">
               {days.map((d) => {
-                const list = stopsOn(d);
+                const isPast = d < today;
+                const list = isPast ? doneOn(d) : stopsOn(d);
                 const active = d === day;
                 const hasOverdue = list.some((s) => s.overdue);
                 return (
@@ -286,13 +308,14 @@ export function DeliveriesView({ today, deliveries, collections, onHire, deliver
                     <span className="tabular text-[13px] font-semibold">{d === today || d === tomorrow ? dayLabel(d, { weekday: 'short', day: 'numeric', month: 'short' }) : dayLabel(d, { day: 'numeric', month: 'short' })}</span>
                     <span className={cn('mt-0.5 inline-flex items-center gap-1 text-[11px]', active ? 'text-white/80' : list.length ? 'text-foreground' : 'text-muted-foreground')}>
                       {hasOverdue && <span className="size-1.5 rounded-full bg-red-500" />}
-                      {list.length ? `${list.length} stop${list.length > 1 ? 's' : ''}` : 'No stops'}
+                      {isPast && list.length > 0 && <Check className="size-3 text-emerald-500" strokeWidth={3} />}
+                      {list.length ? (isPast ? `${list.length} done` : `${list.length} stop${list.length > 1 ? 's' : ''}`) : isPast ? 'No jobs' : 'No stops'}
                     </span>
                   </button>
                 );
               })}
             </div>
-            <RoundButton icon={ChevronRight} label="Next week" disabled={week === WEEKS - 1} onClick={() => setWeek((w) => w + 1)} />
+            <RoundButton icon={ChevronRight} label="Next week" disabled={week === WEEKS_AHEAD - 1} onClick={() => setWeek((w) => Math.min(WEEKS_AHEAD - 1, w + 1))} />
           </div>
         </div>
       </section>
@@ -306,12 +329,19 @@ export function DeliveriesView({ today, deliveries, collections, onHire, deliver
                 {day === today ? "Today's run" : day === tomorrow ? "Tomorrow's run" : `Run for ${dayLabel(day, { weekday: 'long', day: 'numeric', month: 'short' })}`}
               </h2>
               <p className="text-xs text-muted-foreground">
-                {run.length
-                  ? `${plural(run.filter((s) => s.kind === 'delivery').length, 'delivery', 'deliveries')} · ${plural(run.filter((s) => s.kind === 'collection').length, 'collection', 'collections')}${day === today && overdueCount ? ` · ${overdueCount} overdue carried over` : ''}`
-                  : 'Deliveries and collections in time order'}
+                {past
+                  ? doneList.length
+                    ? `Completed · ${plural(doneList.filter((s) => s.kind === 'delivery').length, 'delivery', 'deliveries')} · ${plural(doneList.filter((s) => s.kind === 'collection').length, 'collection', 'collections')}`
+                    : 'Nothing was signed off on this day'
+                  : run.length
+                    ? `${plural(run.filter((s) => s.kind === 'delivery').length, 'delivery', 'deliveries')} · ${plural(run.filter((s) => s.kind === 'collection').length, 'collection', 'collections')}${day === today && overdueCount ? ` · ${overdueCount} overdue carried over` : ''}${doneList.length ? ` · ${doneList.length} done` : ''}`
+                    : doneList.length
+                      ? `${plural(doneList.length, 'job', 'jobs')} done today`
+                      : 'Deliveries and collections in time order'}
               </p>
             </div>
-            {run.length > 0 && (
+            {past && doneList.length > 0 && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Completed run</span>}
+            {!past && run.length > 0 && (
               <div className="flex flex-wrap items-center gap-2">
                 {custom && !editing && (
                   <button type="button" onClick={() => saveOrder(day, null)} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground">
@@ -337,8 +367,23 @@ export function DeliveriesView({ today, deliveries, collections, onHire, deliver
 
           {sel && <Stepper stop={sel} jobs={jobs} today={today} tomorrow={tomorrow} />}
 
-          {run.length === 0 ? (
-            <EndOfRun title="Nothing on the run" text="No deliveries or collections for this day. Pick another day above to plan ahead." />
+          {past ? (
+            doneList.length ? (
+              <>
+                <DoneList stops={doneList} selKey={sel?.key} onSelect={setSelKey} />
+                <EndOfRun title="End of the run" text="Everything signed off on this day. Open a booking for its full checklist and signature." />
+              </>
+            ) : (
+              <EndOfRun title="No jobs this day" text="No deliveries or collections were signed off on this day." />
+            )
+          ) : run.length === 0 ? (
+            <>
+              {doneList.length > 0 && <DoneList title="Done today" stops={doneList} selKey={sel?.key} onSelect={setSelKey} />}
+              <EndOfRun
+                title={doneList.length ? 'All done for today' : 'Nothing on the run'}
+                text={doneList.length ? 'Every stop on this run has been signed off.' : 'No deliveries or collections for this day. Pick another day above to plan ahead.'}
+              />
+            </>
           ) : (
             <>
               <ol className="relative space-y-3 px-4 pt-5 sm:px-6">
@@ -358,6 +403,7 @@ export function DeliveriesView({ today, deliveries, collections, onHire, deliver
                   />
                 ))}
               </ol>
+              {doneList.length > 0 && <DoneList title="Done today" stops={doneList} selKey={sel?.key} onSelect={setSelKey} />}
               <EndOfRun
                 title={day === today ? 'No more stops today' : 'End of the run'}
                 text={`Run complete after this ${run.at(-1)!.kind}. Upcoming runs will appear here.`}
@@ -367,7 +413,7 @@ export function DeliveriesView({ today, deliveries, collections, onHire, deliver
         </section>
 
         {/* Van load */}
-        <VanLoad run={run} delivered={delivered} isToday={day === today} doneToday={doneToday} />
+        <VanLoad run={past ? doneList : run} past={past} delivered={delivered} isToday={day === today} doneToday={doneToday} />
       </div>
 
       <JobDrawer
@@ -591,8 +637,94 @@ function StopRow({
   );
 }
 
+/** Jobs already signed off: read-only, with who signed and when. */
+function DoneList({ stops, selKey, onSelect, title }: { stops: DoneStop[]; selKey?: string; onSelect: (key: string) => void; title?: string }) {
+  return (
+    <div className="px-4 pt-5 sm:px-6">
+      {title && <h3 className="mb-2 text-[13px] font-semibold text-muted-foreground">{title}</h3>}
+      <ol className="space-y-2.5">
+        {stops.map((s) => (
+          <DoneRow key={s.key} stop={s} selected={s.key === selKey} onSelect={() => onSelect(s.key)} />
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function DoneRow({ stop, selected, onSelect }: { stop: DoneStop; selected: boolean; onSelect: () => void }) {
+  const b = stop.lines[0];
+  const isDelivery = stop.kind === 'delivery';
+  return (
+    <li className="grid grid-cols-[48px_minmax(0,1fr)] gap-x-3 sm:grid-cols-[56px_minmax(0,1fr)] sm:gap-x-4">
+      <div className="flex flex-col items-center gap-1.5 pt-3">
+        <span className="tabular rounded-md bg-stone-100 px-2 py-0.5 text-[13px] font-semibold text-foreground">{stop.time}</span>
+        <span className="flex size-5 items-center justify-center rounded-full bg-stone-900 text-white">
+          <Check className="size-3" strokeWidth={3} />
+        </span>
+      </div>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onSelect}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && onSelect()}
+        aria-pressed={selected}
+        className={cn(
+          'flex min-w-0 flex-col gap-3 rounded-xl border bg-white p-4 text-left transition-shadow outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:flex-row sm:items-center',
+          selected ? 'shadow-[0_8px_24px_-12px_rgb(0_0_0/0.25)] ring-1 ring-stone-300' : 'hover:shadow-[var(--shadow-sm)]'
+        )}
+      >
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200 ring-inset">
+              <Check className="size-3" strokeWidth={3} />
+              {isDelivery ? 'Delivered' : 'Collected'}
+            </span>
+            <Link href={`/bookings/${bookingRef(b)}`} onClick={(e) => e.stopPropagation()} className="inline-flex min-w-0 items-center gap-1 text-sm font-semibold text-foreground hover:underline">
+              <MapPin className="size-3.5 shrink-0" />
+              <span className="truncate">{b.customer.name}</span>
+            </Link>
+            <span className="flex flex-wrap gap-1">
+              {stop.lines.map((l) => (
+                <span key={l.id} className="inline-flex items-center gap-1 rounded-md border bg-white px-1.5 py-0.5">
+                  <UnitTypeIcon type={l.unit.unitType} className="size-3.5" />
+                  <UnitCode id={l.unit.id} className="text-xs" />
+                </span>
+              ))}
+            </span>
+          </div>
+          <p className="truncate text-sm text-muted-foreground">{b.deliveryAddress}</p>
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            {stop.done.hasSignature && <PenLine className="size-3 shrink-0 text-emerald-600" aria-label="Signature captured" />}
+            {stop.done.signedBy ? `Signed by ${stop.done.signedBy}` : 'Signed off'} · {stop.time}
+          </p>
+        </div>
+        <Link
+          href={`/bookings/${bookingRef(b)}`}
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border bg-white px-3 text-sm font-medium hover:bg-muted"
+        >
+          Open booking <ArrowUpRight className="size-3.5" />
+        </Link>
+      </div>
+    </li>
+  );
+}
+
 /** What has to go on the van for the selected day, what comes back, and how the run is going. */
-function VanLoad({ run, delivered, isToday, doneToday }: { run: Stop[]; delivered: Record<string, DeliveryChecklist | undefined>; isToday: boolean; doneToday: { deliveries: number; collections: number } }) {
+function VanLoad({
+  run,
+  past,
+  delivered,
+  isToday,
+  doneToday,
+}: {
+  run: Stop[];
+  /** A past day: `run` is what was signed off, so everything counts as done */
+  past?: boolean;
+  delivered: Record<string, DeliveryChecklist | undefined>;
+  isToday: boolean;
+  doneToday: { deliveries: number; collections: number };
+}) {
   const tally = (stops: Stop[], from: (l: Job) => string[]) => {
     const counts = new Map<string, number>();
     for (const s of stops) for (const l of s.lines) for (const item of from(l)) counts.set(item, (counts.get(item) ?? 0) + 1);
@@ -600,15 +732,22 @@ function VanLoad({ run, delivered, isToday, doneToday }: { run: Stop[]; delivere
   };
   const out = run.filter((s) => s.kind === 'delivery');
   const back = run.filter((s) => s.kind === 'collection');
-  const loadOut = tally(out, (l) => accessoryItems(l));
+  const loadOut = tally(out, (l) => accessoryItems(l, past ? delivered[l.id] : undefined));
   const loadBack = tally(back, (l) => accessoryItems(l, delivered[l.id]));
   const unitsBack = back.reduce((n, s) => n + s.lines.length, 0);
-  const collected = isToday ? doneToday.collections : 0;
-  const totalBack = unitsBack + collected;
+  const collected = past ? unitsBack : isToday ? doneToday.collections : 0;
+  const totalBack = past ? unitsBack : unitsBack + collected;
   const pct = totalBack ? Math.round((collected / totalBack) * 100) : 0;
   const doneStops = isToday ? doneToday.collections + doneToday.deliveries : 0;
-  const status = !run.length ? (doneStops ? 'Complete' : 'Quiet day') : !isToday ? 'Planned' : doneStops ? 'In progress' : 'Not started';
+  const status = past ? (run.length ? 'Complete' : 'No jobs') : !run.length ? (doneStops ? 'Complete' : 'Quiet day') : !isToday ? 'Planned' : doneStops ? 'In progress' : 'Not started';
   const first = run[0];
+  const statusLine = past
+    ? run.length
+      ? `${plural(run.length, 'stop', 'stops')} signed off · last at ${run.at(-1)!.time}`
+      : 'Nothing signed off this day'
+    : first
+      ? `${first.kind === 'delivery' ? 'Delivery' : 'Collection'} at ${first.time ?? 'any time'} · ${plural(run.length, 'stop', 'stops')} remaining`
+      : 'No stops left on this run';
 
   return (
     <section className="h-fit overflow-hidden rounded-2xl border bg-white shadow-[var(--shadow-xs)]">
@@ -623,22 +762,22 @@ function VanLoad({ run, delivered, isToday, doneToday }: { run: Stop[]; delivere
       </div>
 
       <div className="divide-y">
-        <LoadRow icon={ArrowUpFromLine} title="Units going out" empty="No deliveries">
+        <LoadRow icon={ArrowUpFromLine} title={past ? "Units delivered" : "Units going out"} empty="No deliveries">
           {out.flatMap((s) => s.lines).map((l) => (
             <UnitChip key={l.id} line={l} />
           ))}
         </LoadRow>
-        <LoadRow icon={Package} title="Load on the van" empty="Nothing extra">
+        <LoadRow icon={Package} title={past ? "Left on site" : "Load on the van"} empty="Nothing extra">
           {loadOut.map(([item, n]) => (
             <Count key={item} item={item} n={n} />
           ))}
         </LoadRow>
-        <LoadRow icon={ArrowDownToLine} title="Units coming back" empty="No collections">
+        <LoadRow icon={ArrowDownToLine} title={past ? "Units collected" : "Units coming back"} empty="No collections">
           {back.flatMap((s) => s.lines).map((l) => (
             <UnitChip key={l.id} line={l} />
           ))}
         </LoadRow>
-        <LoadRow icon={Wrench} title="Required accessories" note={loadBack.length ? 'Bring back from site' : undefined} empty="Nothing to bring back">
+        <LoadRow icon={Wrench} title={past ? 'Accessories recovered' : 'Required accessories'} note={loadBack.length > 0 && !past ? 'Bring back from site' : undefined} empty={past ? 'None' : 'Nothing to bring back'}>
           {loadBack.map(([item, n]) => (
             <Count key={item} item={item} n={n} />
           ))}
@@ -668,9 +807,7 @@ function VanLoad({ run, delivered, isToday, doneToday }: { run: Stop[]; delivere
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-[13px] font-semibold text-foreground">Run status</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {first ? `${first.kind === 'delivery' ? 'Delivery' : 'Collection'} at ${first.time ?? 'any time'} · ${plural(run.length, 'stop', 'stops')} remaining` : 'No stops left on this run'}
-            </p>
+            <p className="truncate text-xs text-muted-foreground">{statusLine}</p>
           </div>
           <span
             className={cn(

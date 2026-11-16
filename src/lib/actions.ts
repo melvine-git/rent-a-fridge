@@ -49,6 +49,12 @@ function today(): string {
   return new Date().toISOString().split('T')[0];
 }
 
+function addDaysISO(iso: string, n: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().split('T')[0];
+}
+
 // Helper to get tomorrow's date in YYYY-MM-DD
 function tomorrow(): string {
   const d = new Date();
@@ -1417,6 +1423,17 @@ export async function getDispatchData(days = 7) {
     onHire: details(db.bookings.filter((b) => b.status === 'ON_HIRE')),
     delivered,
     completed,
+    // Jobs signed off in the last 12 weeks, so past days on the day picker show what was done
+    history: db.dockets
+      .filter((d) => d.status === 'COMPLETED' && d.completedAt && d.completedAt.slice(0, 10) >= addDaysISO(todayStr, -7 * 12 - 1))
+      .map((d) => {
+        const b = db.bookings.find((x) => x.id === d.bookingId);
+        const line = b && withDetails(db, b);
+        return line
+          ? { id: d.id, kind: d.type === 'DELIVERY' ? ('delivery' as const) : ('collection' as const), at: d.completedAt!, signedBy: d.signedBy, hasSignature: !!d.signatureData, line }
+          : null;
+      })
+      .filter((d) => !!d),
     // Every signed-off collection, newest first, for the "Collected" box
     collectedHistory: db.dockets
       .filter((d) => d.type === 'COLLECTION' && d.status === 'COMPLETED')
