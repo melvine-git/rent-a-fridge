@@ -206,7 +206,6 @@ export function CommandCentre(props: CommandCentreProps) {
           <div className="pointer-events-auto flex items-center divide-x rounded-full border bg-white/95 text-xs shadow-[var(--shadow-md)] backdrop-blur">
             <span className="flex items-center gap-2 px-3.5 py-2 font-medium text-foreground">
               <span className="relative flex size-2">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60" />
                 <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
               </span>
               Live
@@ -334,7 +333,6 @@ function FleetAvatar({ unit, active, alert, size = 'md' }: { unit: Unit; active?
         </span>
       )}
       <span className={cn('absolute -right-0.5 -bottom-0.5 flex size-3 rounded-full ring-2 ring-white', dot)}>
-        {alert && <span className={cn('absolute inline-flex size-full animate-ping rounded-full opacity-60', dot)} />}
       </span>
     </span>
   );

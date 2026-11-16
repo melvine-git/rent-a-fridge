@@ -71,7 +71,6 @@ export function GreetingHero({ date, greeting, issues, jobsToday }: { date: stri
               >
                 <Link href={it.href} className={cn('group inline-flex h-8 items-center gap-2 rounded-full border pr-2.5 pl-3 text-[13px] font-medium transition-colors', PILL)}>
                   <span className="relative flex size-2">
-                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-[var(--brand-red)] opacity-40" />
                     <span className="relative inline-flex size-2 rounded-full bg-[var(--brand-red)]" />
                   </span>
                   {it.label}
