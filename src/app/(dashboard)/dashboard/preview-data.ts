@@ -40,7 +40,7 @@ export function previewData(realUnits: Unit[], today: string, tomorrow: string):
       powerAvailable: 'STANDARD',
       cableLength: '15m',
       accessories: { hitchLock: true, wheelClamp: false, doorLock: true, tempRecorder: false },
-      createdAt: today,
+      createdAt: new Date(Date.parse(`${o.startDate}T00:00:00Z`) - 5 * 86_400_000).toISOString().slice(0, 10),
       customer: c,
       unit: u,
       ...o,
@@ -91,5 +91,16 @@ export function previewData(realUnits: Unit[], today: string, tomorrow: string):
     doneToday: [{ kind: 'delivery', at: new Date(`${today}T08:42:00`).toISOString(), signedBy: 'J. Park', line: doneLine }],
     delivered: Object.fromEntries(hires.map((h) => [h.id, left])),
     nextOut: { [eventsLine.unitId]: { date: tomorrow, customer: events.name }, 'UF-03': { date: shift(5), customer: bistro.name } },
+    jobs: Object.fromEntries([
+      ...hires.map((h) => [
+        h.id,
+        [
+          { type: 'DELIVERY' as const, status: 'COMPLETED' as const, completedAt: `${h.startDate}T08:42:00.000Z`, signedBy: h === doneLine ? 'J. Park' : 'Jane S' },
+          // Stormont's collection was never given to a driver, so it shows as unassigned
+          ...(h === stormontLine ? [] : [{ type: 'COLLECTION' as const, status: 'SCHEDULED' as const, signedBy: '', staff: 'Andy Keery' }]),
+        ],
+      ]),
+      ...[bistroLine, oneillsA, oneillsB, eventsLine].map((l) => [l.id, [{ type: 'DELIVERY' as const, status: 'SCHEDULED' as const, signedBy: '', staff: 'Andy Keery' }]]),
+    ]),
   };
 }

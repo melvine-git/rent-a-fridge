@@ -31,6 +31,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         doneToday: data.doneToday,
         delivered: data.delivered,
         nextOut: data.nextOut,
+        jobs: data.jobs,
       };
   const mapLines = [...centre.hires, ...centre.deliveries, ...centre.collections, ...centre.doneToday.map((d) => d.line)];
   const postcodeOf = new Map(mapLines.map((l) => [l.id, extractPostcode(l.deliveryAddress)]));

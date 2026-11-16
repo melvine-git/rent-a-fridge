@@ -1708,6 +1708,11 @@ export async function getDashboardData() {
         return line ? { kind: d.type === 'DELIVERY' ? ('delivery' as const) : ('collection' as const), at: d.completedAt!, signedBy: d.signedBy, line } : null;
       })
       .filter((d) => !!d),
+    // Delivery/collection jobs per booking line, for the hire progress on the dashboard
+    jobs: db.dockets.reduce<Record<string, { type: 'DELIVERY' | 'COLLECTION'; status: DeliveryDocket['status']; completedAt?: string; signedBy: string; staff?: string }[]>>((acc, d) => {
+      (acc[d.bookingId] ??= []).push({ type: d.type, status: d.status, completedAt: d.completedAt, signedBy: d.signedBy, staff: db.staff.find((s) => s.id === d.staffId)?.name });
+      return acc;
+    }, {}),
     // Whoever has today's jobs, otherwise the first driver
     driver: ((id) => db.staff.find((s) => s.id === id) ?? db.staff.find((s) => s.role === 'DRIVER') ?? null)(
       db.dockets.find((d) => d.scheduledDate <= todayStr && (d.status !== 'COMPLETED' || d.completedAt?.slice(0, 10) === todayStr))?.staffId
