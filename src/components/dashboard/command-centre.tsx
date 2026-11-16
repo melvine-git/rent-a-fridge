@@ -593,7 +593,6 @@ function HireProgress({
   const done = steps.filter((x) => x.state === 'done').length;
   const isCollection = s.kind === 'collection';
   const due = isCollection ? b.endDate : b.startDate;
-  const late = Math.max(0, -daysFromToday(due));
   const stepBtn = 'flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground';
 
   return (
@@ -631,12 +630,6 @@ function HireProgress({
           <span key={i} className={cn('h-1.5 flex-1 rounded-full', x.state === 'done' ? 'bg-stone-900' : x.state === 'current' ? 'bg-amber-500' : 'bg-stone-200')} />
         ))}
       </div>
-
-      <dl className="mt-4 grid grid-cols-3 gap-2">
-        {isCollection ? <Tile label="Days out" value={Math.max(0, daysBetween(b.startDate, today))} /> : <Tile label="Hire length" value={`${daysBetween(b.startDate, b.endDate)} d`} />}
-        <Tile label={isCollection ? 'Due' : 'Starts'} value={formatDate(due)} />
-        {late > 0 && !s.done ? <Tile label={isCollection ? 'Overdue' : 'Late'} value={`${late} d`} warn /> : <Tile label="Units" value={s.lines.length} />}
-      </dl>
 
       <div className="mt-5 mb-1 flex items-baseline justify-between">
         <h3 className="text-sm font-semibold text-foreground">Hire progress</h3>
