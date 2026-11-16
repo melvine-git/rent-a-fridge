@@ -198,3 +198,79 @@
     scrollbar-color: var(--warm-gray-300) transparent;
   }
 }
+/* Dashboard map */
+.leaflet-container {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  background: #f2efe9;
+}
+.leaflet-tile-pane {
+  filter: saturate(0.45) contrast(0.92) brightness(1.05);
+}
+.leaflet-control-attribution {
+  font-size: 10px;
+  background: rgb(255 255 255 / 0.7) !important;
+}
+.map-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  font: 700 12px/1 var(--font-sans), system-ui, sans-serif;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2), 0 4px 10px -2px rgb(0 0 0 / 0.25);
+  transition: transform 150ms ease;
+}
+.map-pin:hover,
+.map-pin.is-active {
+  transform: scale(1.15);
+}
+.map-pin--stop {
+  width: 26px;
+  height: 26px;
+  background: #fff;
+  color: #1c1917;
+  border: 2px solid #1c1917;
+}
+.map-pin--done {
+  background: #1c1917;
+  color: #fff;
+}
+.map-pin--next {
+  width: 30px;
+  height: 30px;
+  background: var(--brand-red);
+  color: #fff;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 10px rgb(227 0 15 / 0.14), 0 0 0 22px rgb(227 0 15 / 0.08), 0 4px 10px -2px rgb(0 0 0 / 0.3);
+}
+.map-pin--late {
+  border-color: var(--brand-red);
+  color: var(--brand-red);
+}
+.map-pin--site {
+  width: 24px;
+  height: 24px;
+  background: var(--pin, #0ea5e9);
+  color: #fff;
+  border: 2px solid #fff;
+  font-size: 11px;
+}
+.map-pin--yard {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: #1c1917;
+  color: #fff;
+  border: 2px solid #fff;
+}
+.map-tag {
+  background: #1c1917 !important;
+  color: #fff !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+  padding: 3px 8px !important;
+  font: 600 11px/1.3 var(--font-sans), system-ui, sans-serif !important;
+  box-shadow: 0 4px 10px -2px rgb(0 0 0 / 0.3) !important;
+}
+.map-tag::before {
+  display: none;
+}

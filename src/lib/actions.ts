@@ -1695,6 +1695,25 @@ export async function getDashboardData() {
     collections: details(db.bookings.filter((b) => b.status === 'ON_HIRE' && b.endDate <= tomorrowStr)),
     upcoming: upcoming.slice(0, 8),
     upcomingTotal: upcoming.length,
+    hires: details(db.bookings.filter((b) => b.status === 'ON_HIRE')),
+    delivered: Object.fromEntries(
+      db.dockets.filter((d) => d.type === 'DELIVERY' && d.status === 'COMPLETED').map((d) => [d.bookingId, d.checklist])
+    ) as Record<string, DeliveryChecklist | undefined>,
+    // Jobs signed off today, so the run can show them as done
+    doneToday: db.dockets
+      .filter((d) => d.status === 'COMPLETED' && d.completedAt?.slice(0, 10) === todayStr)
+      .map((d) => {
+        const b = db.bookings.find((x) => x.id === d.bookingId);
+        const line = b && withDetails(db, b);
+        return line ? { kind: d.type === 'DELIVERY' ? ('delivery' as const) : ('collection' as const), at: d.completedAt!, signedBy: d.signedBy, line } : null;
+      })
+      .filter((d) => !!d),
+    nextOut: Object.fromEntries(
+      details(db.bookings.filter((b) => b.status === 'CONFIRMED').sort((a, b) => b.startDate.localeCompare(a.startDate))).map((b) => [
+        b.unitId,
+        { date: b.startDate, customer: b.customer.name },
+      ])
+    ) as Record<string, { date: string; customer: string }>,
     today: todayStr,
     tomorrow: tomorrowStr,
   };

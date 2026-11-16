@@ -2,9 +2,12 @@ import Link from 'next/link';
 import { getDashboardData, getShellData } from '@/lib/actions';
 import { Avatar } from '@/components/app/avatar';
 import { UnitTypeIcon, UnitCode } from '@/components/app/unit-type-icon';
-import { UNIT_TYPE_LABELS, TONE_CLASSES, unitDisplayStatus, type Tone, type UnitDisplayStatus } from '@/lib/domain';
+import { CommandCentre } from '@/components/dashboard/command-centre';
+import { TONE_CLASSES, unitDisplayStatus, type Tone, type UnitDisplayStatus } from '@/lib/domain';
 import { groupVisits } from '@/lib/jobs';
-import { formatDate, formatDayDate, formatRelativeDay, greeting } from '@/lib/format';
+import { extractPostcode, geocodePostcodes, YARD_ADDRESS, type LatLng } from '@/lib/geo';
+import { formatDate, formatRelativeDay, greeting } from '@/lib/format';
+import { previewData } from './preview-data';
 import { cn } from '@/lib/utils';
 import {
   ArrowRight,
@@ -15,7 +18,6 @@ import {
   ChevronRight,
   CircleAlert,
   Gauge,
-  MapPin,
   PackageCheck,
   PenLine,
   TriangleAlert,
@@ -23,7 +25,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
-import type { AppNotification, BookingWithDetails, UnitType } from '@/types';
+import type { AppNotification, BookingWithDetails } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,9 +42,32 @@ const ATTENTION_ORDER: Record<string, number> = { LATE: 0, BREAKDOWN: 1, COLLECT
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-export default async function DashboardPage() {
-  const [data, shell] = await Promise.all([getDashboardData(), getShellData()]);
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ preview?: string }> }) {
+  const [data, shell, params] = await Promise.all([getDashboardData(), getShellData(), searchParams]);
   const { units, deliveries, collections, upcoming, upcomingTotal, activity, today, tomorrow } = data;
+  const preview = params.preview === '1';
+
+  // Map: real data, or a sample Belfast day with ?preview=1
+  const centre = preview
+    ? previewData(units, today, tomorrow)
+    : {
+        today,
+        tomorrow,
+        units,
+        hires: data.hires,
+        deliveries: upcoming.flatMap((u) => u.lines).filter((l) => l.startDate <= tomorrow),
+        collections,
+        doneToday: data.doneToday,
+        delivered: data.delivered,
+        nextOut: data.nextOut,
+      };
+  const mapLines = [...centre.hires, ...centre.deliveries, ...centre.collections, ...centre.doneToday.map((d) => d.line)];
+  const postcodeOf = new Map(mapLines.map((l) => [l.id, extractPostcode(l.deliveryAddress)]));
+  const yardPostcode = extractPostcode(YARD_ADDRESS);
+  const geo = await geocodePostcodes([...postcodeOf.values(), yardPostcode].filter((p): p is string => !!p));
+  const coords: Record<string, LatLng> = {};
+  for (const [id, pc] of postcodeOf) if (pc && geo[pc]) coords[id] = geo[pc];
+  const yard = yardPostcode && geo[yardPostcode] ? { ...geo[yardPostcode], address: YARD_ADDRESS } : null;
 
   // Breakdown overrides the stored status, so a broken unit never counts as available
   const count = (list: typeof units, s: UnitDisplayStatus) => list.filter((u) => unitDisplayStatus(u) === s).length;
@@ -104,11 +129,6 @@ export default async function DashboardPage() {
       ? `Everything is on track. ${plural(todayVisits, 'job', 'jobs')} on today's run.`
       : 'Everything is on track. Nothing on the run today.';
 
-  const byType = (Object.keys(UNIT_TYPE_LABELS) as UnitType[]).map((type) => {
-    const list = units.filter((u) => u.unitType === type);
-    return { type, total: list.length, available: count(list, 'AVAILABLE') };
-  });
-
   return (
     <div className="space-y-6 lg:space-y-8">
       {/* Header */}
@@ -120,13 +140,29 @@ export default async function DashboardPage() {
           <h1 className="mt-1.5 text-[28px] leading-tight font-semibold tracking-tight text-foreground">{greeting()}</h1>
           <p className={cn('mt-1 text-[15px]', problems.length ? 'text-foreground/80' : 'text-muted-foreground')}>{summary}</p>
         </div>
-        <Link
-          href="/deliveries"
-          className="inline-flex h-9 items-center gap-1.5 self-start rounded-lg border bg-white px-3.5 text-sm font-medium shadow-[var(--shadow-xs)] transition-colors hover:bg-muted sm:self-auto"
-        >
-          <Truck className="size-4" /> Open dispatch
-        </Link>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <Link
+            href={preview ? '/dashboard' : '/dashboard?preview=1'}
+            className="inline-flex h-9 items-center rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {preview ? 'Show live data' : 'Preview with sample day'}
+          </Link>
+          <Link
+            href="/deliveries"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border bg-white px-3.5 text-sm font-medium shadow-[var(--shadow-xs)] transition-colors hover:bg-muted"
+          >
+            <Truck className="size-4" /> Open dispatch
+          </Link>
+        </div>
       </header>
+
+      {preview && (
+        <p className="-mt-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800 lg:-mt-4">
+          <b className="font-semibold">Preview:</b> the map and its panels show a made-up Belfast day so you can see the design. Nothing is saved, and everything else on this page is live data.
+        </p>
+      )}
+
+      <CommandCentre {...centre} coords={coords} yard={yard} />
 
       {/* Needs attention */}
       {attention.length > 0 && (
@@ -206,12 +242,6 @@ export default async function DashboardPage() {
 
       <div className="grid gap-4 lg:grid-cols-3 lg:gap-6">
         <div className="space-y-4 lg:col-span-2 lg:space-y-6">
-          {/* Schedule */}
-          <Card title="Schedule" description="Deliveries and collections on the run" action={<CardLink href="/deliveries">Open dispatch</CardLink>}>
-            <DaySchedule label="Today" date={today} visits={visits.filter((v) => v.date === today)} today={today} />
-            <DaySchedule label="Tomorrow" date={tomorrow} visits={visits.filter((v) => v.date === tomorrow)} today={today} />
-          </Card>
-
           {/* Upcoming */}
           <Card
             title="Upcoming hires"
@@ -264,48 +294,6 @@ export default async function DashboardPage() {
         </div>
 
         <div className="space-y-4 lg:space-y-6">
-          {/* Fleet status */}
-          <Card title="Fleet" count={units.length} action={<CardLink href="/units">View all</CardLink>}>
-            <div className="space-y-5 p-5">
-              <div>
-                <div className="flex h-2 gap-0.5 overflow-hidden rounded-full">
-                  {[
-                    { n: onHire, c: TONE_CLASSES.info.dot },
-                    { n: available, c: TONE_CLASSES.success.dot },
-                    { n: maintenance, c: TONE_CLASSES.warning.dot },
-                    { n: breakdown, c: TONE_CLASSES.danger.dot },
-                  ]
-                    .filter((s) => s.n > 0)
-                    .map((s, i) => (
-                      <div key={i} className={cn('rounded-full', s.c)} style={{ flexGrow: s.n }} />
-                    ))}
-                </div>
-                <dl className="mt-4 grid grid-cols-4 gap-2">
-                  <Legend dot={TONE_CLASSES.info.dot} label="On hire" value={onHire} />
-                  <Legend dot={TONE_CLASSES.success.dot} label="Available" value={available} />
-                  <Legend dot={TONE_CLASSES.warning.dot} label="Service" value={maintenance} />
-                  <Legend dot={TONE_CLASSES.danger.dot} label="Breakdown" value={breakdown} />
-                </dl>
-              </div>
-              <ul className="space-y-3 border-t pt-4">
-                {byType.map((t) => (
-                  <li key={t.type}>
-                    <div className="flex items-center gap-2.5 text-sm">
-                      <UnitTypeIcon type={t.type} />
-                      <span className="flex-1 text-foreground">{UNIT_TYPE_LABELS[t.type]}</span>
-                      <span className="tabular text-xs text-muted-foreground">
-                        <span className="font-semibold text-foreground">{t.available}</span> of {t.total} free
-                      </span>
-                    </div>
-                    <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
-                      <div className="h-full rounded-full bg-emerald-500/80" style={{ width: `${t.total ? (t.available / t.total) * 100 : 0}%` }} />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </Card>
-
           {/* Activity */}
           <Card title="Recent activity">
             {activity.length === 0 ? (
@@ -420,61 +408,5 @@ function Quiet({ icon: Icon, children }: { icon: LucideIcon; children: React.Rea
     <p className="flex items-center gap-2.5 px-5 py-4 text-sm text-muted-foreground">
       <Icon className="size-4 shrink-0 text-muted-foreground/60" /> {children}
     </p>
-  );
-}
-
-function Legend({ dot, label, value }: { dot: string; label: string; value: number }) {
-  return (
-    <div>
-      <dt className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        <span className={cn('size-1.5 rounded-full', dot)} />
-        {label}
-      </dt>
-      <dd className="tabular mt-0.5 text-lg leading-tight font-semibold text-foreground">{value}</dd>
-    </div>
-  );
-}
-
-function DaySchedule({ label, date, visits, today }: { label: string; date: string; visits: Visit[]; today: string }) {
-  return (
-    <div className="border-b last:border-b-0">
-      <div className="flex items-center gap-2 bg-muted/30 px-5 py-2">
-        <span className="text-xs font-semibold tracking-wider text-foreground uppercase">{label}</span>
-        <span className="text-xs text-muted-foreground">{formatDayDate(date)}</span>
-        <span className="tabular ml-auto text-xs text-muted-foreground">{visits.length ? plural(visits.length, 'job', 'jobs') : ''}</span>
-      </div>
-      {visits.length === 0 ? (
-        <Quiet icon={CalendarCheck}>Nothing on the run.</Quiet>
-      ) : (
-        <ol>
-          {visits.map((v) => {
-            const b = v.lines[0];
-            const overdue = v.kind === 'collection' && b.endDate < today;
-            const delivery = v.kind === 'delivery';
-            return (
-              <li key={`${v.kind}-${b.id}`}>
-                <Link href={`/bookings/${b.groupId ?? b.id}`} className="group grid grid-cols-[52px_14px_1fr_auto] items-center gap-3 px-5 py-3 transition-colors hover:bg-muted/40">
-                  <span className="tabular text-sm font-semibold text-foreground">{v.time ?? <span className="font-normal text-muted-foreground">Any</span>}</span>
-                  <span className={cn('size-2.5 justify-self-center rounded-full ring-4', delivery ? 'bg-violet-500 ring-violet-100' : overdue ? 'bg-red-500 ring-red-100' : 'bg-amber-500 ring-amber-100')} />
-                  <div className="min-w-0">
-                    <p className="flex items-center gap-2 text-sm">
-                      <span className="truncate font-medium text-foreground">{b.customer.name}</span>
-                      <span className="shrink-0 text-xs text-muted-foreground">{v.lines.map((l) => l.unit.id).join(' + ')}</span>
-                    </p>
-                    <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                      <MapPin className="size-3 shrink-0" />
-                      <span className="truncate">{b.deliveryAddress}</span>
-                    </p>
-                  </div>
-                  <span className={cn('text-xs font-medium', delivery ? 'text-violet-700' : overdue ? 'text-red-600' : 'text-amber-700')}>
-                    {delivery ? 'Delivery' : overdue ? `Overdue · ${formatDate(b.endDate)}` : 'Collection'}
-                  </span>
-                </Link>
-              </li>
-            );
-          })}
-        </ol>
-      )}
-    </div>
   );
 }
