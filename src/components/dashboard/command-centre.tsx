@@ -8,6 +8,7 @@ import { accessoryItems } from '@/components/jobs/job-drawer';
 import { FleetMap, type MapPoint, type RouteLeg } from './fleet-map';
 import { STATUS_META, TONE_CLASSES, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, nextServiceDate, powerShort, unitDisplayStatus, type UnitDisplayStatus } from '@/lib/domain';
 import { bookingRef, groupVisits } from '@/lib/jobs';
+import { hireSteps, type LineJob, type StepState } from '@/lib/hire-steps';
 import { daysBetween, daysFromToday, formatDate, formatDayDate, formatPhone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { ArrowUpRight, CalendarPlus, Check, ChevronLeft, ChevronRight, MessageSquare, Phone, Thermometer, TriangleAlert, Wrench, X, Zap } from 'lucide-react';
@@ -34,7 +35,7 @@ export type CommandCentreProps = {
   yard: (LatLng & { address: string }) | null;
   driver: { name: string; phone: string } | null;
   /** Delivery/collection jobs by booking line id */
-  jobs: Record<string, { type: 'DELIVERY' | 'COLLECTION'; status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED'; completedAt?: string; signedBy: string; staff?: string }[]>;
+  jobs: Record<string, LineJob[]>;
 };
 
 type Stop = {
@@ -520,8 +521,6 @@ function Tile({ label, value, warn }: { label: string; value: React.ReactNode; w
   );
 }
 
-type StepState = 'done' | 'current' | 'todo';
-type Step = { title: string; sub?: string; time: string; state: StepState };
 
 function MarkerDot({ kind }: { kind: StepState }) {
   if (kind === 'done')
@@ -537,36 +536,6 @@ function MarkerDot({ kind }: { kind: StepState }) {
       </span>
     );
   return <span className="block size-5 rounded-full border-2 border-stone-300 bg-white" />;
-}
-
-/** The booking's life from creation to the unit being back and ready, for the selected stop. */
-function hireSteps(s: Stop, jobs: CommandCentreProps['jobs'], today: string, tomorrow: string): Step[] {
-  const b = s.lines[0];
-  const js = s.lines.flatMap((l) => jobs[l.id] ?? []);
-  const delivered = js.find((j) => j.type === 'DELIVERY' && j.status === 'COMPLETED');
-  const collected = js.find((j) => j.type === 'COLLECTION' && j.status === 'COMPLETED');
-  const when = (date: string, time?: string) => `${date <= today ? 'Today' : date === tomorrow ? 'Tomorrow' : formatDate(date)}${time ? ` ${time}` : ''}`;
-  const pending = (type: 'DELIVERY' | 'COLLECTION', due: string) => {
-    const staff = js.find((j) => j.type === type)?.staff;
-    return [due < today && `Missed ${formatDate(due)}`, staff ? `Driver ${staff}` : 'driver not assigned'].filter(Boolean).join(' · ');
-  };
-  const signed = (j: { signedBy: string }) => (j.signedBy ? `Signed by ${j.signedBy}` : undefined);
-  const day = (iso?: string) => (iso ? formatDate(iso.slice(0, 10)) : '—');
-  const ready = !!collected && s.lines.every((l) => unitDisplayStatus(l.unit) === 'AVAILABLE');
-
-  return [
-    { title: 'Booking created', sub: s.lines.map((l) => l.unit.id).join(', '), time: formatDate(b.createdAt), state: 'done' },
-    delivered
-      ? { title: 'Delivered', sub: signed(delivered), time: day(delivered.completedAt), state: 'done' }
-      : { title: 'Delivery', sub: pending('DELIVERY', b.startDate), time: when(b.startDate, b.deliveryTime), state: 'current' },
-    collected
-      ? { title: 'Collected', sub: signed(collected), time: day(collected.completedAt), state: 'done' }
-      : delivered
-        ? { title: 'Collection', sub: pending('COLLECTION', b.endDate), time: when(b.endDate, b.collectionTime), state: 'current' }
-        : { title: 'Collection', sub: `Due ${formatDate(b.endDate)}`, time: '—', state: 'todo' },
-    { title: 'Back at depot', time: collected ? day(collected.completedAt) : '—', state: collected ? 'done' : 'todo' },
-    { title: 'Inspected & available', time: ready ? day(collected?.completedAt) : '—', state: ready ? 'done' : 'todo' },
-  ];
 }
 
 function HireProgress({
@@ -589,7 +558,7 @@ function HireProgress({
   tomorrow: string;
 }) {
   const b = s.lines[0];
-  const steps = hireSteps(s, jobs, today, tomorrow);
+  const steps = hireSteps(s.lines, jobs, today, tomorrow);
   const done = steps.filter((x) => x.state === 'done').length;
   const isCollection = s.kind === 'collection';
   const due = isCollection ? b.endDate : b.startDate;

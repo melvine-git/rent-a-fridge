@@ -5,6 +5,7 @@ import { readDb, writeDb } from './db';
 import { saveImage, saveFile, deleteImage, IMAGE_TYPES, MAX_UPLOAD_BYTES, DOCUMENT_TYPES, MAX_DOCUMENT_BYTES } from './uploads';
 import { formatAddress } from './format';
 import { nextServiceDate, COMPONENT_LABELS, bookingGroupStatus, quoteTotals } from './domain';
+import type { LineJob } from './hire-steps';
 import type {
   Customer,
   CustomerAddress,
@@ -1370,6 +1371,14 @@ export interface BookingListItem {
   lines: { id: string; unitId: string; unitType: UnitType; status: BookingStatus; startDate: string; endDate: string }[];
 }
 
+/** Delivery/collection jobs per booking line, for hire progress trackers. */
+function jobsByLine(db: Database): Record<string, LineJob[]> {
+  return db.dockets.reduce<Record<string, LineJob[]>>((acc, d) => {
+    (acc[d.bookingId] ??= []).push({ type: d.type, status: d.status, completedAt: d.completedAt, signedBy: d.signedBy, staff: db.staff.find((s) => s.id === d.staffId)?.name });
+    return acc;
+  }, {});
+}
+
 /**
  * Everything the dispatch board needs: open deliveries and collections from any overdue date up
  * to `days` ahead, the delivery checklist each collection should recover, and recent completions.
@@ -1408,6 +1417,12 @@ export async function getDispatchData(days = 7) {
     onHire: details(db.bookings.filter((b) => b.status === 'ON_HIRE')),
     delivered,
     completed,
+    // Units signed off today, so the van load can show progress through the run
+    doneToday: {
+      deliveries: db.dockets.filter((d) => d.type === 'DELIVERY' && d.status === 'COMPLETED' && d.completedAt?.slice(0, 10) === todayStr).length,
+      collections: db.dockets.filter((d) => d.type === 'COLLECTION' && d.status === 'COMPLETED' && d.completedAt?.slice(0, 10) === todayStr).length,
+    },
+    jobs: jobsByLine(db),
     staff: db.staff,
   };
 }
@@ -1708,11 +1723,7 @@ export async function getDashboardData() {
         return line ? { kind: d.type === 'DELIVERY' ? ('delivery' as const) : ('collection' as const), at: d.completedAt!, signedBy: d.signedBy, line } : null;
       })
       .filter((d) => !!d),
-    // Delivery/collection jobs per booking line, for the hire progress on the dashboard
-    jobs: db.dockets.reduce<Record<string, { type: 'DELIVERY' | 'COLLECTION'; status: DeliveryDocket['status']; completedAt?: string; signedBy: string; staff?: string }[]>>((acc, d) => {
-      (acc[d.bookingId] ??= []).push({ type: d.type, status: d.status, completedAt: d.completedAt, signedBy: d.signedBy, staff: db.staff.find((s) => s.id === d.staffId)?.name });
-      return acc;
-    }, {}),
+    jobs: jobsByLine(db),
     // Whoever has today's jobs, otherwise the first driver
     driver: ((id) => db.staff.find((s) => s.id === id) ?? db.staff.find((s) => s.role === 'DRIVER') ?? null)(
       db.dockets.find((d) => d.scheduledDate <= todayStr && (d.status !== 'COMPLETED' || d.completedAt?.slice(0, 10) === todayStr))?.staffId
