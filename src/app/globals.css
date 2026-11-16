@@ -275,12 +275,3 @@
 .map-tag::before {
   display: none;
 }
-
-@keyframes hero-sheen {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: 0% 0;
-  }
-}
