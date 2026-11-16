@@ -437,7 +437,7 @@ function RunPanel({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2.5">
-              <h2 className="font-display text-[22px] leading-tight font-bold tracking-[-0.02em] whitespace-nowrap text-foreground">{day === 'today' ? "Today's run" : "Tomorrow's run"}</h2>
+              <h2 className="text-[15px] font-semibold whitespace-nowrap text-foreground">{day === 'today' ? "Today's run" : "Tomorrow's run"}</h2>
               <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ring-1 ring-inset', statusCls)}>{status}</span>
             </div>
             <p className="mt-0.5 truncate text-xs text-muted-foreground">
