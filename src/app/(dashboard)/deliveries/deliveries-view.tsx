@@ -167,8 +167,8 @@ export function DeliveriesView({ today, deliveries, collections, onHire, deliver
       {/* Hero: headline numbers and the day picker over the mountain scene */}
       <section className="relative -mx-4 -mt-6 px-4 pt-6 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:-mt-8 lg:px-8 lg:pt-8">
         <HeroScene image={heroImage} />
-        <div className="relative space-y-5">
-          <div className="xl:max-w-[1000px]">
+        <div className={cn('relative space-y-5', heroImage && 'xl:max-w-[68%]')}>
+          <div className={heroImage ? undefined : 'xl:max-w-[1000px]'}>
             <KpiDrilldown
               variant="hero"
               cards={[
@@ -216,7 +216,7 @@ export function DeliveriesView({ today, deliveries, collections, onHire, deliver
           {/* Day rail */}
           <div className="flex items-center gap-2">
             <RoundButton icon={ChevronLeft} label="Previous week" disabled={week === 0} onClick={() => setWeek((w) => w - 1)} />
-            <div className="scrollbar-thin flex flex-1 gap-2 overflow-x-auto py-1">
+            <div className="flex flex-1 gap-2 overflow-x-auto py-1 [scrollbar-width:none]">
               {days.map((d) => {
                 const list = stopsOn(d);
                 const active = d === day;
@@ -232,14 +232,14 @@ export function DeliveriesView({ today, deliveries, collections, onHire, deliver
                     }}
                     aria-pressed={active}
                     className={cn(
-                      'flex min-w-[104px] flex-1 shrink-0 flex-col items-center rounded-2xl border px-3 py-2.5 text-center transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+                      'flex min-w-[80px] flex-1 shrink-0 flex-col items-center rounded-2xl border px-1.5 py-2.5 whitespace-nowrap text-center transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
                       active ? 'border-stone-900 bg-stone-900 text-white shadow-[0_10px_24px_-10px_rgb(0_0_0/0.5)]' : 'border-white/70 bg-white/85 backdrop-blur hover:bg-white hover:shadow-[var(--shadow-sm)]'
                     )}
                   >
                     <span className={cn('text-[11px] font-medium', active ? 'text-white/70' : 'text-muted-foreground')}>
                       {d === today ? 'Today' : d === tomorrow ? 'Tomorrow' : dayLabel(d, { weekday: 'short' })}
                     </span>
-                    <span className="tabular text-sm font-semibold">{d === today || d === tomorrow ? dayLabel(d, { weekday: 'short', day: 'numeric', month: 'short' }) : dayLabel(d, { day: 'numeric', month: 'short' })}</span>
+                    <span className="tabular text-[13px] font-semibold">{d === today || d === tomorrow ? dayLabel(d, { weekday: 'short', day: 'numeric', month: 'short' }) : dayLabel(d, { day: 'numeric', month: 'short' })}</span>
                     <span className={cn('mt-0.5 inline-flex items-center gap-1 text-[11px]', active ? 'text-white/80' : list.length ? 'text-foreground' : 'text-muted-foreground')}>
                       {hasOverdue && <span className="size-1.5 rounded-full bg-red-500" />}
                       {list.length ? `${list.length} stop${list.length > 1 ? 's' : ''}` : 'No stops'}

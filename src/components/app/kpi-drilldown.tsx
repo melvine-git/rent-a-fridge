@@ -56,15 +56,15 @@ export function KpiDrilldown({ cards, variant = 'default' }: { cards: DrilldownC
                 aria-expanded={card.items.length === 1 ? undefined : isOpen}
                 title={card.items.length === 1 ? 'Open' : card.items.length ? 'Show list' : undefined}
                 className={cn(
-                  'group flex items-center gap-3.5 rounded-2xl border border-white/70 bg-white/85 p-4 text-left shadow-[0_1px_2px_rgb(0_0_0/0.04),0_8px_24px_-12px_rgb(0_0_0/0.15)] backdrop-blur transition-all outline-none hover:-translate-y-0.5 hover:bg-white focus-visible:ring-2 focus-visible:ring-ring/40',
+                  'group flex items-center gap-3 rounded-2xl border border-white/70 bg-white/85 p-3.5 text-left shadow-[0_1px_2px_rgb(0_0_0/0.04),0_8px_24px_-12px_rgb(0_0_0/0.15)] backdrop-blur transition-all outline-none hover:-translate-y-0.5 hover:bg-white focus-visible:ring-2 focus-visible:ring-ring/40',
                   isOpen && 'ring-2 ring-foreground/15'
                 )}
               >
-                <span className={cn('flex size-11 shrink-0 items-center justify-center rounded-xl', t.soft)}>
+                <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-xl', t.soft)}>
                   <card.icon className={cn('size-5', t.text)} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] text-muted-foreground">{card.label}</span>
+                  <span className="block text-[13px] leading-snug text-muted-foreground">{card.label}</span>
                   <span className={cn('tabular block text-2xl leading-tight font-semibold', card.emphasis ? t.text : 'text-foreground')}>{card.items.length}</span>
                   {card.hint && <span className="block truncate text-[11px] text-muted-foreground">{card.hint}</span>}
                 </span>
