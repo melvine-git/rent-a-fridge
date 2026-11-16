@@ -14,6 +14,8 @@ export interface DrilldownItem {
   title: React.ReactNode;
   subtitle?: React.ReactNode;
   meta?: React.ReactNode;
+  /** Optional button beside the row, e.g. "Collect early" */
+  action?: { label: string; icon?: LucideIcon; onClick: () => void };
 }
 
 export interface DrilldownCard {
@@ -43,7 +45,7 @@ export function KpiDrilldown({ cards, variant = 'default' }: { cards: DrilldownC
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+      <div className={cn('grid grid-cols-2 gap-3 lg:gap-4', cards.length > 4 ? 'lg:grid-cols-3' : 'lg:grid-cols-4')}>
         {cards.map((card) => {
           const t = TONE_CLASSES[card.tone ?? 'neutral'];
           const isOpen = open === card.key;
@@ -117,8 +119,8 @@ export function KpiDrilldown({ cards, variant = 'default' }: { cards: DrilldownC
           ) : (
             <ul className="scrollbar-thin max-h-80 divide-y overflow-y-auto">
               {active.items.map((item) => (
-                <li key={item.key}>
-                  <Link href={item.href} className="group flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40">
+                <li key={item.key} className="flex items-center">
+                  <Link href={item.href} className="group flex min-w-0 flex-1 items-center gap-3 px-4 py-2.5 hover:bg-muted/40">
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm text-foreground">{item.title}</div>
                       {item.subtitle && <div className="truncate text-xs text-muted-foreground">{item.subtitle}</div>}
@@ -126,6 +128,16 @@ export function KpiDrilldown({ cards, variant = 'default' }: { cards: DrilldownC
                     {item.meta && <div className="shrink-0 text-xs text-muted-foreground">{item.meta}</div>}
                     <ArrowUpRight className="size-4 shrink-0 text-muted-foreground/50 group-hover:text-foreground" />
                   </Link>
+                  {item.action && (
+                    <button
+                      type="button"
+                      onClick={item.action.onClick}
+                      className="mr-3 inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border bg-white px-2.5 text-xs font-medium transition-colors hover:bg-muted"
+                    >
+                      {item.action.icon && <item.action.icon className="size-3.5" />}
+                      {item.action.label}
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>

@@ -1417,6 +1417,21 @@ export async function getDispatchData(days = 7) {
     onHire: details(db.bookings.filter((b) => b.status === 'ON_HIRE')),
     delivered,
     completed,
+    // Every signed-off collection, newest first, for the "Collected" box
+    collectedHistory: db.dockets
+      .filter((d) => d.type === 'COLLECTION' && d.status === 'COMPLETED')
+      .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))
+      .map((d) => {
+        const booking = db.bookings.find((b) => b.id === d.bookingId);
+        return {
+          id: d.id,
+          unitId: d.unitId,
+          customer: db.customers.find((c) => c.id === booking?.customerId)?.name ?? 'Unknown customer',
+          signedBy: d.signedBy,
+          completedAt: d.completedAt ?? d.scheduledDate,
+          href: `/bookings/${booking ? groupIdOf(booking) : d.bookingId}`,
+        };
+      }),
     // Units signed off today, so the van load can show progress through the run
     doneToday: {
       deliveries: db.dockets.filter((d) => d.type === 'DELIVERY' && d.status === 'COMPLETED' && d.completedAt?.slice(0, 10) === todayStr).length,

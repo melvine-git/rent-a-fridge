@@ -10,7 +10,7 @@ import { HeroScene } from '@/components/dispatch/hero-scene';
 import { JobDrawer, accessoryItems, type JobTarget, type JobType } from '@/components/jobs/job-drawer';
 import { powerShort } from '@/lib/domain';
 import { hireSteps, type LineJob } from '@/lib/hire-steps';
-import { bookingRef, groupVisits } from '@/lib/jobs';
+import { bookingRef, groupVisits, visitOf } from '@/lib/jobs';
 import { formatDate, formatPhone, w3wUrl } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { BookingWithDetails, DeliveryChecklist, Staff } from '@/types';
@@ -20,12 +20,13 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpFromLine,
-  ArrowUpRight,
   Box,
   CalendarCheck,
   Check,
   ChevronLeft,
   ChevronRight,
+  CircleCheck,
+  Lock,
   MapPin,
   Navigation,
   Package,
@@ -54,6 +55,7 @@ interface DeliveriesViewProps {
   onHire: Job[];
   delivered: Record<string, DeliveryChecklist | undefined>;
   completed: Completed[];
+  collectedHistory: { id: string; unitId: string; customer: string; signedBy: string; completedAt: string; href: string }[];
   doneToday: { deliveries: number; collections: number };
   jobs: Record<string, LineJob[]>;
   staff: Staff[];
@@ -81,7 +83,7 @@ function km(a: LatLng, b: LatLng) {
   return 12742 * Math.asin(Math.sqrt(h));
 }
 
-export function DeliveriesView({ today, deliveries, collections, onHire, delivered, doneToday, jobs, staff, coords, yard, heroImage }: DeliveriesViewProps) {
+export function DeliveriesView({ today, deliveries, collections, onHire, delivered, collectedHistory, doneToday, jobs, staff, coords, yard, heroImage }: DeliveriesViewProps) {
   const router = useRouter();
   const [job, setJob] = useState<JobTarget | null>(null);
   const [day, setDay] = useState(today);
@@ -204,8 +206,48 @@ export function DeliveriesView({ today, deliveries, collections, onHire, deliver
                     ),
                     subtitle: h.deliveryAddress,
                     meta: `Back ${formatDate(h.endDate)}`,
+                    action: { label: h.endDate > today ? 'Collect early' : 'Collect', icon: PackageCheck, onClick: () => open(visitOf(h, onHire, byEnd), 'collection') },
                   })),
                   emptyText: 'No units on hire',
+                },
+                {
+                  key: 'recover',
+                  label: 'Accessories on site',
+                  icon: Lock,
+                  tone: 'warning',
+                  items: onHire
+                    .filter((h) => accessoryItems(h, delivered[h.id]).length > 0)
+                    .map((h) => ({
+                      key: h.id,
+                      href: `/bookings/${bookingRef(h)}`,
+                      title: (
+                        <span className="flex items-center gap-2">
+                          <UnitCode id={h.unit.id} /> {h.customer.name}
+                        </span>
+                      ),
+                      subtitle: accessoryItems(h, delivered[h.id]).join(' · '),
+                      meta: `Back ${formatDate(h.endDate)}`,
+                    })),
+                  emptyText: 'No locks, clamps, cables or recorders on site',
+                },
+                {
+                  key: 'collected',
+                  label: 'Collected',
+                  icon: CircleCheck,
+                  tone: 'success',
+                  hint: 'All time',
+                  items: collectedHistory.map((c) => ({
+                    key: c.id,
+                    href: c.href,
+                    title: (
+                      <span className="flex items-center gap-2">
+                        <UnitCode id={c.unitId} /> {c.customer}
+                      </span>
+                    ),
+                    subtitle: c.signedBy ? `Signed by ${c.signedBy}` : undefined,
+                    meta: formatDate(c.completedAt.split('T')[0]),
+                  })),
+                  emptyText: 'No collections signed off yet',
                 },
               ]}
             />
@@ -566,7 +608,7 @@ function VanLoad({ run, delivered, isToday, doneToday }: { run: Stop[]; delivere
 
   return (
     <section className="h-fit overflow-hidden rounded-2xl border bg-white shadow-[var(--shadow-xs)]">
-      <Link href="/collections" className="group flex items-center gap-3 border-b px-5 py-4 transition-colors hover:bg-muted/30">
+      <div className="flex items-center gap-3 border-b px-5 py-4">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[var(--brand-red)]">
           <Package className="size-5" />
         </span>
@@ -574,8 +616,7 @@ function VanLoad({ run, delivered, isToday, doneToday }: { run: Stop[]; delivere
           <span className="block text-[15px] font-semibold text-foreground">Van load</span>
           <span className="block text-xs text-muted-foreground">Everything for this run, totalled</span>
         </span>
-        <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-      </Link>
+      </div>
 
       <div className="divide-y">
         <LoadRow icon={ArrowUpFromLine} title="Units going out" empty="No deliveries">
@@ -637,10 +678,6 @@ function VanLoad({ run, delivered, isToday, doneToday }: { run: Stop[]; delivere
           </span>
         </div>
       </div>
-
-      <Link href="/collections" className="flex items-center justify-between border-t bg-muted/30 px-5 py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground">
-        All collections <ArrowUpRight className="size-3.5" />
-      </Link>
     </section>
   );
 }

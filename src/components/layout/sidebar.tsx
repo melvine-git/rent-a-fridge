@@ -8,7 +8,6 @@ import {
   LayoutDashboard,
   CalendarDays,
   Truck,
-  PackageCheck,
   Users,
   Box,
   Wrench,
@@ -32,8 +31,7 @@ function buildNav(counts: ShellData['counts']): { section: string; items: NavIte
       section: 'Operations',
       items: [
         { href: '/bookings', label: 'Bookings', icon: CalendarDays, count: counts.actionsOverdue, urgent: true },
-        { href: '/deliveries', label: 'Deliveries', icon: Truck, count: counts.deliveriesToday },
-        { href: '/collections', label: 'Collections', icon: PackageCheck, count: counts.collectionsDue, urgent: true },
+        { href: '/deliveries', label: 'Dispatch', icon: Truck, count: counts.deliveriesToday + counts.collectionsDue, urgent: counts.collectionsDue > 0 },
       ],
     },
     {

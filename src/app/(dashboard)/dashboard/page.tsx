@@ -47,7 +47,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const breakdown = units.filter((u) => unitDisplayStatus(u) === 'BREAKDOWN').length;
   const issues: HeroIssue[] = [
     late ? { label: `${plural(late, 'delivery', 'deliveries')} late`, href: '/deliveries', tone: 'danger' as const } : null,
-    overdue ? { label: `${plural(overdue, 'collection', 'collections')} overdue`, href: '/collections', tone: 'warning' as const } : null,
+    overdue ? { label: `${plural(overdue, 'collection', 'collections')} overdue`, href: '/deliveries', tone: 'warning' as const } : null,
     breakdown ? { label: `${plural(breakdown, 'unit', 'units')} broken down`, href: '/units', tone: 'danger' as const } : null,
   ].filter((x) => x !== null);
   const todayJobs =
