@@ -150,8 +150,8 @@ export function UnitsView({ units }: UnitsViewProps) {
       <section className="relative -mx-4 -mt-6 px-4 pt-8 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:-mt-8 lg:px-8 lg:pt-10">
         <HeroScene image="/fleet/hero-mountains.jpg" layout="full" />
         <div className="relative">
-          <h1 className="font-display text-[34px] leading-tight font-bold tracking-[-0.03em] text-foreground sm:text-[40px]">Fleet</h1>
-          <p className="mt-1 text-[15px] text-muted-foreground">
+          <h1 className="font-display text-[34px] leading-tight font-bold tracking-[-0.03em] text-foreground [text-shadow:0_0_16px_rgb(255_255_255/0.9)] sm:text-[40px]">Fleet</h1>
+          <p className="mt-1 text-[15px] text-foreground/70 [text-shadow:0_0_12px_rgb(255_255_255/0.95),0_0_4px_rgb(255_255_255/0.9)]">
             {units.length} units across {NUMBER_WORDS[types.length] ?? types.length} equipment {types.length === 1 ? 'category' : 'categories'}
           </p>
           <div className="mt-6 grid gap-4 sm:grid-cols-3">
