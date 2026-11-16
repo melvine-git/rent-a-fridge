@@ -59,7 +59,7 @@ const BAR: Record<BarKind, { cls: string; icon?: LucideIcon; iconCls?: string }>
   service: { cls: 'border-violet-300 bg-violet-50 text-violet-950 hover:bg-violet-100/80', icon: Wrench, iconCls: 'text-violet-600' },
   scheduled: { cls: 'border-violet-200 bg-violet-50/70 text-violet-950 hover:bg-violet-100/70', icon: Wrench, iconCls: 'text-violet-500' },
   breakdown: { cls: 'border-red-300 bg-red-50 text-red-900 hover:bg-red-100/70', icon: TriangleAlert, iconCls: 'text-red-600' },
-  available: { cls: 'border-dashed border-emerald-400 bg-emerald-50/50 text-emerald-700 hover:bg-emerald-100/60', icon: CircleCheck, iconCls: 'text-emerald-600' },
+  available: { cls: 'border-0 bg-green-50/60 text-green-700 hover:bg-green-100/60', icon: CircleCheck, iconCls: 'text-green-600' },
 };
 
 const LEGEND: { label: string; dot: string }[] = [
@@ -490,6 +490,7 @@ export function BookingsCalendar({ bookings, allUnits, list, view, onView, listS
                               )}
                               style={{ left: `calc(${bar.s * colWidth}% + 3px)`, width: `calc(${span * colWidth}% - 6px)` }}
                             >
+                              {avail && <DashedOutline />}
                               {Icon && (span >= 2 || !avail) && <Icon className={cn('size-4 shrink-0', style.iconCls)} />}
                               {avail ? (
                                 span >= 2 && <span className="truncate text-[12px] font-medium">{bar.title}</span>
@@ -527,7 +528,10 @@ export function BookingsCalendar({ bookings, allUnits, list, view, onView, listS
                 </span>
               ))}
               <span className="flex items-center gap-1.5">
-                <span className="h-3 w-5 rounded border border-dashed border-emerald-400 bg-emerald-50" /> Available
+                <span className="relative h-3.5 w-6 rounded bg-green-50/60">
+                  <DashedOutline dash="4 3" radius={3} />
+                </span>
+                Available
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="bg-hatch h-3 w-5 rounded border" /> In service
@@ -634,6 +638,15 @@ export function BookingsCalendar({ bookings, allUnits, list, view, onView, listS
         </SheetContent>
       </Sheet>
     </div>
+  );
+}
+
+/** Crisp dashed border with set dash lengths and rounded corners (CSS dashed borders are short and faint). */
+function DashedOutline({ dash = '6 4', radius = 8 }: { dash?: string; radius?: number }) {
+  return (
+    <svg className="pointer-events-none absolute inset-0 size-full overflow-visible" aria-hidden>
+      <rect x="0.75" y="0.75" rx={radius} ry={radius} fill="none" stroke="#22c55e" strokeWidth="1.5" strokeDasharray={dash} style={{ width: 'calc(100% - 1.5px)', height: 'calc(100% - 1.5px)' }} />
+    </svg>
   );
 }
 

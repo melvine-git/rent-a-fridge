@@ -38,7 +38,8 @@ export function TopBar({ onMenuClick, onSearchClick, onNotificationsClick, notif
         <Menu className="size-5" />
       </button>
 
-      <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1.5 text-sm sm:flex">
+      {/* Only on detail pages, where it is the way back; top-level pages carry their own title */}
+      <nav aria-label="Breadcrumb" className={cn('hidden min-w-0 items-center gap-1.5 text-sm', segments.length > 1 && 'sm:flex')}>
         {segments.map((seg, i) => {
           const href = '/' + segments.slice(0, i + 1).join('/');
           const last = i === segments.length - 1;
