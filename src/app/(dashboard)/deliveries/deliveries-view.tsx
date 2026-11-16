@@ -10,8 +10,8 @@ import { HeroScene } from '@/components/dispatch/hero-scene';
 import { JobDrawer, accessoryItems, type JobTarget, type JobType } from '@/components/jobs/job-drawer';
 import { powerShort } from '@/lib/domain';
 import { hireSteps, type LineJob } from '@/lib/hire-steps';
-import { bookingRef, groupVisits, visitOf } from '@/lib/jobs';
-import { daysFromToday, formatDate, formatPhone, w3wUrl } from '@/lib/format';
+import { bookingRef, groupVisits } from '@/lib/jobs';
+import { formatDate, formatPhone, w3wUrl } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { BookingWithDetails, DeliveryChecklist, Staff } from '@/types';
 import {
@@ -26,13 +26,11 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  CircleCheck,
   MapPin,
   Navigation,
   Package,
   PackageCheck,
   PencilLine,
-  PenLine,
   Phone,
   RotateCcw,
   Sparkles,
@@ -83,7 +81,7 @@ function km(a: LatLng, b: LatLng) {
   return 12742 * Math.asin(Math.sqrt(h));
 }
 
-export function DeliveriesView({ today, deliveries, collections, onHire, delivered, completed, doneToday, jobs, staff, coords, yard, heroImage }: DeliveriesViewProps) {
+export function DeliveriesView({ today, deliveries, collections, onHire, delivered, doneToday, jobs, staff, coords, yard, heroImage }: DeliveriesViewProps) {
   const router = useRouter();
   const [job, setJob] = useState<JobTarget | null>(null);
   const [day, setDay] = useState(today);
@@ -324,85 +322,6 @@ export function DeliveriesView({ today, deliveries, collections, onHire, deliver
 
         {/* Van load */}
         <VanLoad run={run} delivered={delivered} isToday={day === today} doneToday={doneToday} />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-5 xl:gap-6">
-        {/* On hire */}
-        <section className="overflow-hidden rounded-2xl border bg-white shadow-[var(--shadow-xs)] xl:col-span-3">
-          <header className="flex items-center gap-2 px-5 pt-4 pb-3">
-            <h2 className="text-[15px] font-semibold text-foreground">On hire</h2>
-            <span className="tabular rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">{onHire.length}</span>
-            <span className="ml-1 text-xs text-muted-foreground">Units currently with customers</span>
-          </header>
-          {onHire.length === 0 ? (
-            <p className="border-t px-5 py-6 text-sm text-muted-foreground">No units on hire.</p>
-          ) : (
-            <ul className="divide-y border-t">
-              {[...onHire]
-                .sort((a, b) => a.endDate.localeCompare(b.endDate))
-                .map((h) => {
-                  const d = daysFromToday(h.endDate);
-                  return (
-                    <li key={h.id} className="flex items-center gap-3 px-5 py-3">
-                      <UnitTypeIcon type={h.unit.unitType} boxed />
-                      <Link href={`/bookings/${bookingRef(h)}`} className="min-w-0 flex-1">
-                        <p className="flex items-center gap-2 text-sm">
-                          <UnitCode id={h.unit.id} />
-                          <span className="truncate text-foreground hover:underline">{h.customer.name}</span>
-                        </p>
-                        <p className={cn('text-xs', d < 0 ? 'font-medium text-red-600' : 'text-muted-foreground')}>
-                          {d < 0 ? `Collection ${-d}d overdue` : d === 0 ? 'Collection due today' : `Back ${formatDate(h.endDate)} · in ${d} day${d > 1 ? 's' : ''}`}
-                        </p>
-                      </Link>
-                      <button
-                        onClick={() => open(visitOf(h, onHire, byEnd), 'collection')}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-white px-2.5 text-xs font-medium hover:bg-muted"
-                      >
-                        <PackageCheck className="size-3.5" /> Collect
-                      </button>
-                    </li>
-                  );
-                })}
-            </ul>
-          )}
-        </section>
-
-        {/* Recently completed */}
-        <section className="overflow-hidden rounded-2xl border bg-white shadow-[var(--shadow-xs)] xl:col-span-2">
-          <header className="flex items-center gap-2 px-5 pt-4 pb-3">
-            <h2 className="text-[15px] font-semibold text-foreground">Recently completed</h2>
-          </header>
-          {completed.length === 0 ? (
-            <p className="border-t px-5 py-6 text-sm text-muted-foreground">No completed jobs yet.</p>
-          ) : (
-            <ul className="divide-y border-t">
-              {completed.map((d) => (
-                <li key={d.id}>
-                  <Link href={d.href} className="group flex items-center gap-3 px-5 py-3 hover:bg-muted/40">
-                    <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-full', d.type === 'DELIVERY' ? 'bg-violet-100 text-violet-700' : 'bg-emerald-100 text-emerald-700')}>
-                      {d.type === 'DELIVERY' ? <Truck className="size-3.5" /> : <CircleCheck className="size-3.5" />}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="flex items-center gap-2 text-sm">
-                        <UnitCode id={d.unitId} />
-                        <span className="truncate text-muted-foreground">
-                          {d.type === 'DELIVERY' ? 'to' : 'from'} {d.customer}
-                        </span>
-                      </p>
-                      {d.signedBy && (
-                        <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-                          {d.hasSignature && <PenLine className="size-3 shrink-0 text-emerald-600" aria-label="Signature captured" />}
-                          Signed by {d.signedBy}
-                        </p>
-                      )}
-                    </div>
-                    <span className="tabular shrink-0 text-xs text-muted-foreground">{formatDate(d.completedAt.split('T')[0])}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
       </div>
 
       <JobDrawer
