@@ -8,15 +8,14 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { SegmentedControl } from '@/components/app/segmented-control';
 import { EmptyState } from '@/components/app/empty-state';
 import { UnitTypeIcon } from '@/components/app/unit-type-icon';
-import { BookingsCalendar, occupies } from './bookings-calendar';
-import { GBP, unitDisplayStatus } from '@/lib/domain';
+import { BookingsCalendar, type PlannerView } from './bookings-calendar';
+import { GBP } from '@/lib/domain';
 import { daysBetween, formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { CalendarRange, ChevronRight, CircleAlert, List, PackageCheck, Search, SearchX, Truck, Warehouse, type LucideIcon } from 'lucide-react';
+import { Search, SearchX } from 'lucide-react';
 import type { BookingListItem } from '@/lib/actions';
 import type { BookingWithDetails, Unit } from '@/types';
 
-type View = 'timeline' | 'list';
 type ListFilter = 'all' | 'upcoming' | 'onhire' | 'attention' | 'completed' | 'cancelled';
 
 const FILTERS: { value: ListFilter; label: string; test: (b: BookingListItem) => boolean }[] = [
@@ -29,105 +28,19 @@ const FILTERS: { value: ListFilter; label: string; test: (b: BookingListItem) =>
 ];
 
 export function BookingsWorkspace({ bookings, allUnits, list, today }: { bookings: BookingWithDetails[]; allUnits: Unit[]; list: BookingListItem[]; today: string }) {
-  const [view, setView] = useState<View>('timeline');
+  const [view, setView] = useState<PlannerView>('timeline');
   const [filter, setFilter] = useState<ListFilter>('all');
   const [query, setQuery] = useState('');
 
-  const freeToday = allUnits.filter(
-    (u) =>
-      unitDisplayStatus(u) !== 'MAINTENANCE' &&
-      !u.breakdown &&
-      !bookings.some((b) => b.unitId === u.id && occupies(b, today, today))
-  ).length;
-  const count = (f: ListFilter) => list.filter(FILTERS.find((x) => x.value === f)!.test).length;
-  const inService = allUnits.filter((u) => unitDisplayStatus(u) !== 'MAINTENANCE' && !u.breakdown).length;
-  const lines = list.flatMap((b) => b.lines);
-  const unitsOnHire = lines.filter((l) => l.status === 'ON_HIRE').length;
-  const unitsToDeliver = lines.filter((l) => l.status === 'CONFIRMED').length;
-  const late = count('attention');
-  const bookingsWord = (n: number) => `${n} booking${n === 1 ? '' : 's'}`;
-
-  const openList = (f: ListFilter) => {
-    setFilter(f);
-    setView('list');
-  };
-
   return (
-    <div className="space-y-4">
-      {/* Summary */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Summary icon={PackageCheck} tone="sky" label="Units on hire" value={unitsOnHire} sub={`On ${bookingsWord(count('onhire'))}`} cta="View list" onClick={() => openList('onhire')} />
-        <Summary icon={Truck} tone="violet" label="Units to deliver" value={unitsToDeliver} sub={`On ${bookingsWord(count('upcoming'))}`} cta="View list" onClick={() => openList('upcoming')} />
-        <Summary
-          icon={CircleAlert}
-          tone={late ? 'red' : 'stone'}
-          label="Late or overdue"
-          value={late}
-          sub={late ? `${bookingsWord(late)} need action` : 'Nothing late'}
-          cta="View list"
-          onClick={() => openList('attention')}
-        />
-        <Summary icon={Warehouse} tone="emerald" label="Units free today" value={freeToday} sub={`Of ${inService} in service`} cta="View timeline" onClick={() => setView('timeline')} />
-      </div>
-
-      {/* View switch */}
-      <div className="flex items-center justify-between gap-3">
-        <SegmentedControl
-          value={view}
-          onChange={setView}
-          ariaLabel="View"
-          options={[
-            { value: 'timeline', label: 'Timeline', icon: <CalendarRange className="size-4" /> },
-            { value: 'list', label: 'List', icon: <List className="size-4" />, count: list.length },
-          ]}
-        />
-        {view === 'list' && (
-          <div className="relative w-full max-w-xs">
-            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Customer, unit, site, PO or ref" className="h-9 bg-white pl-9" />
-          </div>
-        )}
-      </div>
-
-      {view === 'timeline' ? (
-        <BookingsCalendar bookings={bookings} allUnits={allUnits} list={list} />
-      ) : (
-        <BookingsList list={list} filter={filter} onFilter={setFilter} query={query} onClearQuery={() => setQuery('')} today={today} />
-      )}
-    </div>
-  );
-}
-
-const TONES = {
-  sky: 'bg-sky-50 text-sky-700',
-  violet: 'bg-violet-50 text-violet-700',
-  red: 'bg-red-50 text-red-600',
-  emerald: 'bg-emerald-50 text-emerald-700',
-  stone: 'bg-stone-100 text-stone-500',
-} as const;
-
-function Summary({ icon: Icon, tone, label, value, sub, cta, onClick }: { icon: LucideIcon; tone: keyof typeof TONES; label: string; value: number; sub: string; cta: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={`${label}: ${cta.toLowerCase()}`}
-      className="group flex flex-col rounded-xl border bg-white p-4 text-left shadow-[var(--shadow-xs)] transition-all outline-none hover:-translate-y-0.5 hover:border-foreground/15 hover:shadow-[var(--shadow-md)] focus-visible:ring-2 focus-visible:ring-ring/40"
-    >
-      <span className="flex items-center justify-between gap-2">
-        <span className="text-[13px] font-medium text-muted-foreground">{label}</span>
-        <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', TONES[tone])}>
-          <Icon className="size-4" />
-        </span>
-      </span>
-      <span className={cn('tabular mt-2 text-[28px] leading-none font-semibold tracking-tight', tone === 'red' ? 'text-red-600' : 'text-foreground')}>{value}</span>
-      <span className="mt-2 flex items-center justify-between gap-2 text-xs">
-        <span className="truncate text-muted-foreground">{sub}</span>
-        <span className="inline-flex shrink-0 items-center gap-0.5 font-medium text-muted-foreground/70 transition-colors group-hover:text-foreground">
-          {cta} <ChevronRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
-        </span>
-      </span>
-    </button>
+    <BookingsCalendar
+      bookings={bookings}
+      allUnits={allUnits}
+      list={list}
+      view={view}
+      onView={setView}
+      listSlot={<BookingsList list={list} filter={filter} onFilter={setFilter} query={query} onQuery={setQuery} today={today} />}
+    />
   );
 }
 
@@ -136,16 +49,17 @@ function BookingsList({
   filter,
   onFilter,
   query,
-  onClearQuery,
+  onQuery,
   today,
 }: {
   list: BookingListItem[];
   filter: ListFilter;
   onFilter: (f: ListFilter) => void;
   query: string;
-  onClearQuery: () => void;
+  onQuery: (q: string) => void;
   today: string;
 }) {
+  const onClearQuery = () => onQuery('');
   const router = useRouter();
   const rows = useMemo(() => {
     const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -160,8 +74,9 @@ function BookingsList({
   }, [list, filter, query]);
 
   return (
-    <section className="overflow-hidden rounded-xl border bg-white shadow-[var(--shadow-xs)]">
-      <div className="scrollbar-thin overflow-x-auto border-b px-4 py-3">
+    <section className="overflow-hidden rounded-2xl border bg-white shadow-[var(--shadow-xs)]">
+      <div className="flex flex-col gap-3 border-b px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="scrollbar-thin -mx-4 overflow-x-auto px-4 xl:mx-0 xl:px-0">
         <SegmentedControl
           size="sm"
           value={filter}
@@ -169,6 +84,11 @@ function BookingsList({
           ariaLabel="Booking status"
           options={FILTERS.map((f) => ({ value: f.value, label: f.label, count: list.filter(f.test).length }))}
         />
+        </div>
+        <div className="relative w-full xl:max-w-xs">
+          <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Customer, unit, site, PO or ref" className="h-9 bg-white pl-9" />
+        </div>
       </div>
       {rows.length === 0 ? (
         <EmptyState
