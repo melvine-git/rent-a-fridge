@@ -8,6 +8,10 @@ export interface CustomerDraft {
   name: string;
   phone: string;
   email: string;
+  contactName: string;
+  contactJobTitle: string;
+  contactEmail: string;
+  contactPhone: string;
   address: PostalAddress;
 }
 
@@ -17,6 +21,10 @@ export const emptyCustomerDraft = (): CustomerDraft => ({
   name: '',
   phone: '',
   email: '',
+  contactName: '',
+  contactJobTitle: '',
+  contactEmail: '',
+  contactPhone: '',
   address: { line1: '', line2: '', town: '', county: '', postcode: '', country: DEFAULT_COUNTRY },
 });
 
@@ -27,6 +35,10 @@ export function draftFromCustomer(c: Customer): CustomerDraft {
     name: c.name,
     phone: c.phone,
     email: c.email ?? '',
+    contactName: c.contactName ?? '',
+    contactJobTitle: c.contactJobTitle ?? '',
+    contactEmail: c.contactEmail ?? '',
+    contactPhone: c.contactPhone ?? '',
     address: {
       line1: a?.line1 ?? c.address,
       line2: a?.line2 ?? '',
@@ -47,7 +59,9 @@ export function customerDraftError(d: CustomerDraft): string | null {
   return null;
 }
 
-export function draftToCustomer(d: CustomerDraft): Pick<Customer, 'name' | 'phone' | 'email' | 'address' | 'invoiceAddress'> {
+export function draftToCustomer(
+  d: CustomerDraft
+): Pick<Customer, 'name' | 'phone' | 'email' | 'address' | 'invoiceAddress' | 'contactName' | 'contactJobTitle' | 'contactEmail' | 'contactPhone'> {
   const t = (v?: string) => v?.trim() || undefined;
   const invoiceAddress: PostalAddress = {
     line1: d.address.line1.trim(),
@@ -59,7 +73,18 @@ export function draftToCustomer(d: CustomerDraft): Pick<Customer, 'name' | 'phon
   };
   // `address` is rebuilt from invoiceAddress on the server; sent so the type is complete
   // Empty email is sent as '' (not undefined) so clearing it actually removes it on save
-  return { name: d.name.trim(), phone: d.phone.trim(), email: d.email.trim(), address: invoiceAddress.line1, invoiceAddress };
+  return {
+    name: d.name.trim(),
+    phone: d.phone.trim(),
+    email: d.email.trim(),
+    // '' clears the field on save (keys are stripped server-side)
+    contactName: d.contactName.trim(),
+    contactJobTitle: d.contactJobTitle.trim(),
+    contactEmail: d.contactEmail.trim(),
+    contactPhone: d.contactPhone.trim(),
+    address: invoiceAddress.line1,
+    invoiceAddress,
+  };
 }
 
 export function CustomerFields({ value, onChange }: { value: CustomerDraft; onChange: (next: CustomerDraft) => void }) {
@@ -78,6 +103,23 @@ export function CustomerFields({ value, onChange }: { value: CustomerDraft; onCh
           <Input type="email" value={value.email} onChange={(e) => set('email', e.target.value)} placeholder="accounts@company.com" className="h-9" />
         </Field>
       </div>
+      <fieldset className="space-y-3">
+        <legend className="mb-1.5 text-[13px] font-medium text-foreground">Contact person</legend>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Contact name">
+            <Input value={value.contactName} onChange={(e) => set('contactName', e.target.value)} placeholder="e.g. Sarah Boyd" className="h-9" autoComplete="name" />
+          </Field>
+          <Field label="Job title / position">
+            <Input value={value.contactJobTitle} onChange={(e) => set('contactJobTitle', e.target.value)} placeholder="e.g. Site manager" className="h-9" autoComplete="organization-title" />
+          </Field>
+          <Field label="Contact email">
+            <Input type="email" value={value.contactEmail} onChange={(e) => set('contactEmail', e.target.value)} placeholder="sarah@company.com" className="h-9" />
+          </Field>
+          <Field label="Contact telephone">
+            <Input value={value.contactPhone} onChange={(e) => set('contactPhone', e.target.value)} placeholder="+44 28 …" className="h-9" autoComplete="tel" />
+          </Field>
+        </div>
+      </fieldset>
       <fieldset className="space-y-3">
         <legend className="mb-1.5 text-[13px] font-medium text-foreground">Invoice address</legend>
         <Field label="Address 1" required>

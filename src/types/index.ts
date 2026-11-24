@@ -49,6 +49,11 @@ export interface Customer {
   address: string; // Default/primary invoice address, formatted on one line
   invoiceAddress?: PostalAddress; // Structured invoice address (source of `address` when set)
   addresses?: CustomerAddress[]; // Additional delivery addresses
+  // Named contact person at the customer
+  contactName?: string;
+  contactJobTitle?: string;
+  contactEmail?: string;
+  contactPhone?: string;
   preferences?: CustomerPreferences;
   xeroContactId?: string; // Link to Xero accounting
   createdAt: string; // YYYY-MM-DD
