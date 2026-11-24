@@ -12,9 +12,10 @@ import { Avatar } from '@/components/app/avatar';
 import { CustomerFields, customerDraftError, draftToCustomer, emptyCustomerDraft } from '@/components/customers/customer-fields';
 import { Pill } from '@/components/ui/status-badge';
 import { addCustomer } from '@/lib/actions';
+import { ImportDialog } from '@/components/import/import-dialog';
 import { formatDate, formatPhone } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { Plus, Search, Users, ChevronRight, ArrowUpDown } from 'lucide-react';
+import { Plus, Search, Users, ChevronRight, ArrowUpDown, FileUp } from 'lucide-react';
 import type { CustomerWithStats } from '@/types';
 
 interface CustomersViewProps {
@@ -25,8 +26,14 @@ type SortKey = 'name' | 'lastBookingDate' | 'totalBookings';
 
 export function CustomersView({ initialCustomers }: CustomersViewProps) {
   const router = useRouter();
-  const [customers, setCustomers] = useState(initialCustomers);
+  // Locally-added customers not yet in refreshed props, merged on top
+  const [added, setAdded] = useState<CustomerWithStats[]>([]);
+  const customers = useMemo(() => {
+    const ids = new Set(initialCustomers.map((c) => c.id));
+    return [...initialCustomers, ...added.filter((c) => !ids.has(c.id))];
+  }, [initialCustomers, added]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [segment, setSegment] = useState<'all' | 'active' | 'inactive'>('all');
@@ -43,7 +50,7 @@ export function CustomersView({ initialCustomers }: CustomersViewProps) {
     setIsSubmitting(true);
     try {
       const newCustomer = await addCustomer(draftToCustomer(draft));
-      setCustomers((prev) => [...prev, { ...newCustomer, activeHires: 0, totalBookings: 0 }]);
+      setAdded((prev) => [...prev, { ...newCustomer, activeHires: 0, totalBookings: 0 }]);
       toast.success('Customer added', { description: newCustomer.name + ' has been added' });
       setDraft(emptyCustomerDraft());
       setIsDialogOpen(false);
@@ -104,9 +111,14 @@ export function CustomersView({ initialCustomers }: CustomersViewProps) {
               ]}
             />
           </div>
-          <Button onClick={() => setIsDialogOpen(true)} className="h-9 gap-1.5 px-3.5 hover:bg-[var(--brand-red-dark)]">
-            <Plus /> Add customer
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setImportOpen(true)} className="h-9 gap-1.5 px-3.5">
+              <FileUp /> Import
+            </Button>
+            <Button onClick={() => setIsDialogOpen(true)} className="h-9 gap-1.5 px-3.5 hover:bg-[var(--brand-red-dark)]">
+              <Plus /> Add customer
+            </Button>
+          </div>
         </div>
 
         {rows.length === 0 ? (
@@ -212,6 +224,8 @@ export function CustomersView({ initialCustomers }: CustomersViewProps) {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ImportDialog kind="customers" open={importOpen} onOpenChange={setImportOpen} onDone={() => router.refresh()} />
     </>
   );
 }

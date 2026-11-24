@@ -5,6 +5,7 @@ import { readDb, writeDb } from './db';
 import { saveImage, saveFile, deleteImage, IMAGE_TYPES, MAX_UPLOAD_BYTES, DOCUMENT_TYPES, MAX_DOCUMENT_BYTES } from './uploads';
 import { formatAddress } from './format';
 import { nextServiceDate, COMPONENT_LABELS, bookingGroupStatus, quoteTotals } from './domain';
+import { parseCsv, textToRows } from './import-parse';
 import type { LineJob } from './hire-steps';
 import type {
   Customer,
@@ -1989,4 +1990,146 @@ export async function dismissNotification(
   id: string
 ): Promise<{ success: boolean; error?: string }> {
   return saveNotificationState(id, { dismissed: true });
+}
+
+// ============ IMPORTS (CSV / PDF) ============
+
+/** Read an uploaded .csv/.txt/.tsv/.psv file into a grid of cells for the import preview. */
+export async function parseImportFile(
+  formData: FormData
+): Promise<{ success: boolean; rows?: string[][]; error?: string }> {
+  const file = formData.get('file');
+  if (!(file instanceof File) || file.size === 0) return { success: false, error: 'Choose a file' };
+  if (file.size > 10 * 1024 * 1024) return { success: false, error: 'File must be under 10 MB' };
+  try {
+    const text = await file.text();
+    let rows = parseCsv(text);
+    // Space/tab-aligned .txt files yield one cell per line — split on wide gaps instead
+    if (rows.every((r) => r.length <= 1)) rows = textToRows(text);
+    if (!rows.length) return { success: false, error: 'No rows found in that file' };
+    return { success: true, rows };
+  } catch (e) {
+    return { success: false, error: `Could not read that file: ${e instanceof Error ? e.message : 'unknown error'}` };
+  }
+}
+
+export interface CustomerImportRow {
+  name: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+}
+
+export interface BookingImportRow {
+  customerName: string;
+  unitId: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string;
+  status?: BookingStatus;
+  contactName?: string;
+  contactPhone?: string;
+  address?: string;
+  rate?: number;
+  ratePeriod?: 'DAY' | 'WEEK';
+  notes?: string;
+}
+
+export interface ImportResult {
+  success: boolean;
+  imported: number;
+  createdCustomers?: number;
+  skipped: { name: string; reason: string }[];
+  error?: string;
+}
+
+/** Bulk-create customers; rows whose name already exists (case-insensitive) are skipped. */
+export async function importCustomers(rows: CustomerImportRow[]): Promise<ImportResult> {
+  const db = await readDb();
+  const known = new Map(db.customers.map((c) => [c.name.trim().toLowerCase(), c]));
+  const skipped: ImportResult['skipped'] = [];
+  let imported = 0;
+  for (const row of rows) {
+    const name = row.name?.trim();
+    if (!name) {
+      skipped.push({ name: row.name || '(blank)', reason: 'No name' });
+      continue;
+    }
+    if (known.has(name.toLowerCase())) {
+      skipped.push({ name, reason: 'Already exists' });
+      continue;
+    }
+    const customer: Customer = {
+      id: generateId('cust'),
+      name,
+      phone: row.phone?.trim() ?? '',
+      email: row.email?.trim() || undefined,
+      address: row.address?.trim() ?? '',
+      createdAt: today(),
+    };
+    db.customers.push(customer);
+    known.set(name.toLowerCase(), customer);
+    imported++;
+  }
+  await writeDb(db);
+  revalidatePath('/', 'layout');
+  return { success: true, imported, skipped };
+}
+
+const IMPORT_STATUSES: BookingStatus[] = ['CONFIRMED', 'ON_HIRE', 'COLLECTED', 'CANCELLED'];
+
+/**
+ * Bulk-create past bookings. Customers are matched by name and created when missing;
+ * units must already exist. Rows default to COLLECTED — they're hire history.
+ */
+export async function importBookings(rows: BookingImportRow[]): Promise<ImportResult> {
+  const db = await readDb();
+  const customers = new Map(db.customers.map((c) => [c.name.trim().toLowerCase(), c]));
+  const unitById = new Map(db.units.map((u) => [u.id.trim().toLowerCase(), u]));
+  const skipped: ImportResult['skipped'] = [];
+  let imported = 0;
+  let createdCustomers = 0;
+  for (const row of rows) {
+    const customerName = row.customerName?.trim();
+    const unitKey = row.unitId?.trim().toLowerCase();
+    const label = `${customerName || '(blank)'} / ${row.unitId || '(blank)'}`;
+    if (!customerName || !row.startDate || !row.endDate) {
+      skipped.push({ name: label, reason: 'Missing customer, unit or dates' });
+      continue;
+    }
+    const unit = unitKey ? unitById.get(unitKey) : undefined;
+    if (!unit) {
+      skipped.push({ name: label, reason: `Unknown unit ${row.unitId}` });
+      continue;
+    }
+    let customer = customers.get(customerName.toLowerCase());
+    if (!customer) {
+      customer = { id: generateId('cust'), name: customerName, phone: row.contactPhone?.trim() ?? '', address: row.address?.trim() ?? '', createdAt: today() };
+      db.customers.push(customer);
+      customers.set(customerName.toLowerCase(), customer);
+      createdCustomers++;
+    }
+    const status: BookingStatus = row.status && IMPORT_STATUSES.includes(row.status) ? row.status : 'COLLECTED';
+    const booking: Booking = {
+      id: generateId('book'),
+      customerId: customer.id,
+      unitId: unit.id,
+      status,
+      startDate: row.startDate,
+      endDate: row.endDate,
+      contactName: row.contactName?.trim() || customer.name,
+      contactPhone: row.contactPhone?.trim() || customer.phone,
+      deliveryAddress: row.address?.trim() || customer.address,
+      tempRequired: 4,
+      powerAvailable: 'STANDARD',
+      rate: row.rate,
+      ratePeriod: row.ratePeriod === 'DAY' ? 'DAY' : 'WEEK',
+      notes: row.notes?.trim() || undefined,
+      createdAt: today(),
+    };
+    db.bookings.push(booking);
+    imported++;
+  }
+  await writeDb(db);
+  revalidatePath('/', 'layout');
+  return { success: true, imported, createdCustomers, skipped };
 }

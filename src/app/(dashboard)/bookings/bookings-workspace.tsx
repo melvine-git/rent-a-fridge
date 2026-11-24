@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { ImportDialog } from '@/components/import/import-dialog';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { SegmentedControl } from '@/components/app/segmented-control';
 import { EmptyState } from '@/components/app/empty-state';
@@ -12,7 +14,7 @@ import { BookingsCalendar, type PlannerView } from './bookings-calendar';
 import { GBP } from '@/lib/domain';
 import { daysBetween, formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { Search, SearchX } from 'lucide-react';
+import { FileUp, Search, SearchX } from 'lucide-react';
 import type { BookingListItem } from '@/lib/actions';
 import type { BookingWithDetails, Unit } from '@/types';
 
@@ -61,6 +63,7 @@ function BookingsList({
 }) {
   const onClearQuery = () => onQuery('');
   const router = useRouter();
+  const [importOpen, setImportOpen] = useState(false);
   const rows = useMemo(() => {
     const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const test = FILTERS.find((f) => f.value === filter)!.test;
@@ -85,9 +88,14 @@ function BookingsList({
           options={FILTERS.map((f) => ({ value: f.value, label: f.label, count: list.filter(f.test).length }))}
         />
         </div>
-        <div className="relative w-full xl:max-w-xs">
-          <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Customer, unit, site, PO or ref" className="h-9 bg-white pl-9" />
+        <div className="flex w-full items-center gap-2 xl:max-w-md">
+          <div className="relative flex-1">
+            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Customer, unit, site, PO or ref" className="h-9 bg-white pl-9" />
+          </div>
+          <Button variant="outline" onClick={() => setImportOpen(true)} className="h-9 shrink-0 gap-1.5 px-3">
+            <FileUp className="size-4" /> Import
+          </Button>
         </div>
       </div>
       {rows.length === 0 ? (
@@ -169,6 +177,7 @@ function BookingsList({
       <div className="border-t bg-muted/30 px-4 py-2.5 text-xs text-muted-foreground">
         Showing {rows.length} of {list.length} bookings
       </div>
+      <ImportDialog kind="bookings" open={importOpen} onOpenChange={setImportOpen} onDone={() => router.refresh()} />
     </section>
   );
 }
