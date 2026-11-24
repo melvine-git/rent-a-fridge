@@ -35,6 +35,7 @@ import type {
   BookingSharedInput,
   BookingLineInput,
   ServiceableComponent,
+  NotificationState,
   Database,
 } from '@/types';
 
@@ -381,6 +382,25 @@ export async function updateCustomerPreferences(
   
   // The form sends the complete set, so replace rather than merge (merging could never clear a field)
   customer.preferences = withoutCleared({ ...preferences });
+  await writeDb(db);
+  revalidatePath('/');
+  return { success: true };
+}
+
+export async function deleteCustomer(
+  customerId: string
+): Promise<{ success: boolean; error?: string }> {
+  const db = await readDb();
+  const index = db.customers.findIndex(c => c.id === customerId);
+
+  if (index === -1) {
+    return { success: false, error: 'Customer not found' };
+  }
+  if (db.bookings.some(b => b.customerId === customerId)) {
+    return { success: false, error: 'This customer has bookings, so it cannot be deleted' };
+  }
+
+  db.customers.splice(index, 1);
   await writeDb(db);
   revalidatePath('/');
   return { success: true };
@@ -1025,6 +1045,36 @@ export async function addUnit(data: {
   return { success: true, unit };
 }
 
+export async function deleteUnit(
+  unitId: string
+): Promise<{ success: boolean; error?: string }> {
+  const db = await readDb();
+  const index = db.units.findIndex(u => u.id === unitId);
+
+  if (index === -1) {
+    return { success: false, error: 'Unit not found' };
+  }
+  if (db.bookings.some(b => b.unitId === unitId)) {
+    return { success: false, error: 'This unit has bookings, so it cannot be deleted' };
+  }
+  if (db.dockets.some(d => d.unitId === unitId)) {
+    return { success: false, error: 'This unit has delivery dockets, so it cannot be deleted' };
+  }
+
+  const [unit] = db.units.splice(index, 1);
+
+  // Uploaded files under this unit go with it
+  const urls = [
+    ...(unit.specifications?.photoUrls ?? []),
+    ...(unit.maintenanceHistory ?? []).flatMap(r => (r.attachments ?? []).map(a => a.url)),
+  ];
+  await Promise.all(urls.map(deleteImage));
+
+  await writeDb(db);
+  revalidatePath('/');
+  return { success: true };
+}
+
 export async function updateUnitSpecifications(
   unitId: string,
   specifications: UnitSpecifications
@@ -1639,6 +1689,11 @@ export async function getShellData(): Promise<ShellData> {
   }
   notifications.sort((a, b) => a.date.localeCompare(b.date));
 
+  // Persisted UI state: dismissed items are hidden entirely, read ones shown dimmed
+  const stateById = new Map((db.notifications ?? []).map((s) => [s.id, s]));
+  const visible = notifications.filter((n) => !stateById.get(n.id)?.dismissed);
+  for (const n of visible) n.read = stateById.get(n.id)?.read;
+
   const groups = new Map<string, Booking[]>();
   for (const b of db.bookings) groups.set(groupIdOf(b), [...(groups.get(groupIdOf(b)) ?? []), b]);
 
@@ -1646,10 +1701,10 @@ export async function getShellData(): Promise<ShellData> {
     counts: {
       deliveriesToday: db.bookings.filter((b) => b.status === 'CONFIRMED' && b.startDate === todayStr).length,
       collectionsDue: db.bookings.filter((b) => b.status === 'ON_HIRE' && b.endDate <= todayStr).length,
-      actionsOverdue: notifications.filter((n) => n.kind === 'ACTION_OVERDUE').length,
-      serviceDue: notifications.filter((n) => n.kind === 'SERVICE_DUE' || n.kind === 'BREAKDOWN').length,
+      actionsOverdue: visible.filter((n) => n.kind === 'ACTION_OVERDUE').length,
+      serviceDue: visible.filter((n) => n.kind === 'SERVICE_DUE' || n.kind === 'BREAKDOWN').length,
     },
-    notifications,
+    notifications: visible,
     searchIndex: [
       ...db.customers.map((c) => ({
         type: 'customer' as const,
@@ -1894,4 +1949,36 @@ export async function getUnitsWithHire(): Promise<UnitWithHire[]> {
       };
     })
     .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+}
+
+// ============ NOTIFICATION STATE ============
+
+async function saveNotificationState(
+  id: string,
+  patch: Partial<NotificationState>
+): Promise<{ success: boolean; error?: string }> {
+  const db = await readDb();
+  const list = (db.notifications ??= []);
+  let state = list.find((s) => s.id === id);
+  if (!state) {
+    state = { id };
+    list.push(state);
+  }
+  Object.assign(state, patch);
+  await writeDb(db);
+  revalidatePath('/');
+  return { success: true };
+}
+
+export async function setNotificationRead(
+  id: string,
+  read: boolean
+): Promise<{ success: boolean; error?: string }> {
+  return saveNotificationState(id, { read });
+}
+
+export async function dismissNotification(
+  id: string
+): Promise<{ success: boolean; error?: string }> {
+  return saveNotificationState(id, { dismissed: true });
 }

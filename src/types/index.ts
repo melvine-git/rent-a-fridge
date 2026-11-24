@@ -230,6 +230,13 @@ export interface DeliveryDocket {
   status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED';
 }
 
+/** Persisted per-notification UI state, keyed by the derived notification id. */
+export interface NotificationState {
+  id: string;
+  read?: boolean;
+  dismissed?: boolean;
+}
+
 export interface Database {
   staff: Staff[];
   customers: Customer[];
@@ -237,6 +244,7 @@ export interface Database {
   bookings: Booking[];
   dockets: DeliveryDocket[];
   serviceableComponents?: ServiceableComponent[];
+  notifications?: NotificationState[];
 }
 
 // Input types for actions
@@ -311,6 +319,7 @@ export interface AppNotification {
   description: string;
   date: string;
   href: string;
+  read?: boolean;
 }
 
 export interface ShellData {

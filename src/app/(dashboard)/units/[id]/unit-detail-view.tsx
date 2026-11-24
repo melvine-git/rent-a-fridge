@@ -17,7 +17,7 @@ import { Field, selectClass, textareaClass } from '@/components/app/field';
 import { UnitTypeIcon } from '@/components/app/unit-type-icon';
 import { UnitPhotos } from './unit-photos';
 import { ServiceRecordDialog, AttachmentLinks } from '@/components/maintenance/service-record-dialog';
-import { updateUnit, updateUnitSpecifications, addBOMComponent, updateBOMComponent, removeBOMComponent, setUnitStatus, setUnitBreakdown, setUnitNextService } from '@/lib/actions';
+import { updateUnit, updateUnitSpecifications, addBOMComponent, updateBOMComponent, removeBOMComponent, setUnitStatus, setUnitBreakdown, setUnitNextService, deleteUnit } from '@/lib/actions';
 import { COMPONENT_LABELS, GBP, RECORD_TYPE_META, STATUS_META, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, nextServiceDate, unitDisplayStatus } from '@/lib/domain';
 import { daysBetween, daysFromToday, formatDate } from '@/lib/format';
 import { Activity, ArrowUpRight, CalendarClock, CalendarDays, Cpu, Pencil, Plus, Ruler, Trash2, TriangleAlert, Wrench } from 'lucide-react';
@@ -48,6 +48,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [breakdownNotes, setBreakdownNotes] = useState('');
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState('');
 
   const [editForm, setEditForm] = useState({
@@ -165,6 +166,18 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
     } else failed(r);
   };
 
+  const handleDeleteUnit = async () => {
+    const r = await deleteUnit(unit.id);
+    if (r.success) {
+      toast.success(`${unit.id} deleted`);
+      router.push('/units');
+      router.refresh();
+    } else {
+      setDeleteOpen(false);
+      failed(r);
+    }
+  };
+
   const history = unit.maintenanceHistory ?? [];
   const nextService = nextServiceDate(unit);
   const serviceDays = nextService ? daysFromToday(nextService) : undefined;
@@ -210,6 +223,9 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
             )}
             <Button variant="outline" onClick={() => setIsEditing(true)} className="h-9 gap-1.5 px-3">
               <Pencil /> Edit
+            </Button>
+            <Button variant="outline" onClick={() => setDeleteOpen(true)} className="h-9 gap-1.5 px-3 text-red-700 hover:bg-red-50">
+              <Trash2 /> Delete
             </Button>
           </>
         }
@@ -730,6 +746,26 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
             </Button>
             <Button onClick={handleSaveBOM} className="h-9 px-4 hover:bg-(--brand-red-dark)">
               {editingBOM ? 'Save changes' : 'Add component'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete unit */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold">Delete {unit.id}?</DialogTitle>
+            <DialogDescription>
+              This permanently removes the unit, its specifications, components and service history. Units with bookings cannot be deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} className="h-9 px-4">
+              Cancel
+            </Button>
+            <Button onClick={handleDeleteUnit} className="h-9 bg-red-600 px-4 hover:bg-red-700">
+              Delete unit
             </Button>
           </DialogFooter>
         </DialogContent>

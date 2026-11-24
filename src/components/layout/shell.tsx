@@ -32,7 +32,7 @@ export function Shell({ children, data }: { children: React.ReactNode; data: She
           onMenuClick={() => setSidebarOpen(true)}
           onSearchClick={() => setSearchOpen(true)}
           onNotificationsClick={() => setNotificationsOpen(true)}
-          notificationCount={data.notifications.length}
+          notificationCount={data.notifications.filter((n) => !n.read).length}
         />
         <main className="flex-1">
           <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</div>

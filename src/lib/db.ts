@@ -2,7 +2,7 @@ import 'server-only';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types';
 
-type Collection = 'staff' | 'customers' | 'units' | 'bookings' | 'dockets' | 'serviceableComponents';
+type Collection = 'staff' | 'customers' | 'units' | 'bookings' | 'dockets' | 'serviceableComponents' | 'notifications';
 
 const TABLES: Record<Collection, string> = {
   staff: 'staff',
@@ -11,6 +11,7 @@ const TABLES: Record<Collection, string> = {
   bookings: 'bookings',
   dockets: 'dockets',
   serviceableComponents: 'serviceable_components',
+  notifications: 'notifications',
 };
 
 let client: SupabaseClient | undefined;
@@ -42,7 +43,12 @@ export async function readDb(): Promise<Database> {
   );
   const db = { staff: [], customers: [], units: [], bookings: [], dockets: [] } as Database;
   results.forEach(({ data, error }, i) => {
-    if (error) throw new Error(`Failed to load ${keys[i]}: ${error.message}`);
+    // Notification state lives in its own table; tolerate it being absent so the app
+    // still works in environments where the migration has not been run yet.
+    if (error) {
+      if (keys[i] === 'notifications') return;
+      throw new Error(`Failed to load ${keys[i]}: ${error.message}`);
+    }
     const rows = (data ?? []).map((r) => r.data);
     // No saved list yet means "use the default serviceable components"
     if (keys[i] === 'serviceableComponents') db.serviceableComponents = rows.length ? rows : undefined;

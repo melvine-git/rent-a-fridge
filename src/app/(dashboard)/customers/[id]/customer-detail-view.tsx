@@ -16,7 +16,7 @@ import { Avatar } from '@/components/app/avatar';
 import { Field, selectClass, textareaClass } from '@/components/app/field';
 import { UnitTypeIcon, UnitCode } from '@/components/app/unit-type-icon';
 import { CustomerFields, customerDraftError, draftFromCustomer, draftToCustomer } from '@/components/customers/customer-fields';
-import { updateCustomer, addCustomerAddress, deleteCustomerAddress, updateCustomerPreferences } from '@/lib/actions';
+import { updateCustomer, addCustomerAddress, deleteCustomerAddress, updateCustomerPreferences, deleteCustomer } from '@/lib/actions';
 import { UNIT_TYPE_LABELS } from '@/lib/domain';
 import { daysBetween, formatDate, formatPhone } from '@/lib/format';
 import { CalendarPlus, ExternalLink, History, Link2, MapPin, Pencil, Plus, Trash2, Phone, Mail } from 'lucide-react';
@@ -39,6 +39,7 @@ export function CustomerDetailView({ customer, bookings, preferredUnit, units }:
   const [showAddAddress, setShowAddAddress] = useState(false);
   const [newAddress, setNewAddress] = useState({ label: '', address: '' });
   const [showPreferences, setShowPreferences] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [preferences, setPreferences] = useState<CustomerPreferences>(customer.preferences || {});
 
   const active = bookings.filter((b) => b.status === 'ON_HIRE');
@@ -91,6 +92,18 @@ export function CustomerDetailView({ customer, bookings, preferredUnit, units }:
     }
   };
 
+  const handleDeleteCustomer = async () => {
+    const result = await deleteCustomer(customer.id);
+    if (result.success) {
+      toast.success(`${customer.name} deleted`);
+      router.push('/customers');
+      router.refresh();
+    } else {
+      setDeleteOpen(false);
+      toast.error('Could not delete customer', { description: result.error ?? 'Please try again' });
+    }
+  };
+
   const openXero = () => {
     if (customer.xeroContactId) window.open(`https://go.xero.com/Contacts/View/${encodeURIComponent(customer.xeroContactId)}`, '_blank', 'noopener');
     else setIsEditing(true);
@@ -117,6 +130,9 @@ export function CustomerDetailView({ customer, bookings, preferredUnit, units }:
             </Button>
             <Button variant="outline" onClick={openXero} className="h-9 gap-1.5 px-3">
               <Link2 /> Xero
+            </Button>
+            <Button variant="outline" onClick={() => setDeleteOpen(true)} className="h-9 gap-1.5 px-3 text-red-700 hover:bg-red-50">
+              <Trash2 /> Delete
             </Button>
             <Link
               href={`/bookings/new?customer=${encodeURIComponent(customer.id)}`}
@@ -331,6 +347,26 @@ export function CustomerDetailView({ customer, bookings, preferredUnit, units }:
             </Button>
             <Button onClick={handleSaveEdit} className="h-9 px-4 hover:bg-[var(--brand-red-dark)]">
               Save changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete customer */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold">Delete {customer.name}?</DialogTitle>
+            <DialogDescription>
+              This permanently removes the customer, their saved addresses and hire preferences. Customers with bookings cannot be deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} className="h-9 px-4">
+              Cancel
+            </Button>
+            <Button onClick={handleDeleteCustomer} className="h-9 bg-red-600 px-4 hover:bg-red-700">
+              Delete customer
             </Button>
           </DialogFooter>
         </DialogContent>
