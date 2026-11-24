@@ -17,7 +17,7 @@ export function Field({
     <label className={cn('block space-y-1.5', className)}>
       <span className="text-[13px] font-medium text-foreground">
         {label}
-        {required && <span className="ml-0.5 text-[var(--brand-red)]">*</span>}
+        {required && <span className="ml-0.5 text-(--brand-red)">*</span>}
       </span>
       {children}
       {hint && <span className="block text-xs text-muted-foreground">{hint}</span>}

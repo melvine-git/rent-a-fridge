@@ -1068,6 +1068,25 @@ export async function addBOMComponent(
   return { success: true, component: newComponent };
 }
 
+export async function updateBOMComponent(
+  unitId: string,
+  componentId: string,
+  updates: Omit<BOMComponent, 'id'>
+): Promise<{ success: boolean; component?: BOMComponent; error?: string }> {
+  const db = await readDb();
+  const unit = db.units.find(u => u.id === unitId);
+  const component = unit?.bom?.find(c => c.id === componentId);
+
+  if (!unit || !component) {
+    return { success: false, error: 'Unit or component not found' };
+  }
+
+  Object.assign(component, updates);
+  await writeDb(db);
+  revalidatePath('/');
+  return { success: true, component };
+}
+
 export async function removeBOMComponent(
   unitId: string,
   componentId: string

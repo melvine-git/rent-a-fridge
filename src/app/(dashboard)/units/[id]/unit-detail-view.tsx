@@ -17,7 +17,7 @@ import { Field, selectClass, textareaClass } from '@/components/app/field';
 import { UnitTypeIcon } from '@/components/app/unit-type-icon';
 import { UnitPhotos } from './unit-photos';
 import { ServiceRecordDialog, AttachmentLinks } from '@/components/maintenance/service-record-dialog';
-import { updateUnit, updateUnitSpecifications, addBOMComponent, removeBOMComponent, setUnitStatus, setUnitBreakdown, setUnitNextService } from '@/lib/actions';
+import { updateUnit, updateUnitSpecifications, addBOMComponent, updateBOMComponent, removeBOMComponent, setUnitStatus, setUnitBreakdown, setUnitNextService } from '@/lib/actions';
 import { COMPONENT_LABELS, GBP, RECORD_TYPE_META, STATUS_META, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, nextServiceDate, unitDisplayStatus } from '@/lib/domain';
 import { daysBetween, daysFromToday, formatDate } from '@/lib/format';
 import { Activity, ArrowUpRight, CalendarClock, CalendarDays, Cpu, Pencil, Plus, Ruler, Trash2, TriangleAlert, Wrench } from 'lucide-react';
@@ -43,6 +43,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
   const [isEditing, setIsEditing] = useState(false);
   const [showSpecsEdit, setShowSpecsEdit] = useState(false);
   const [showAddBOM, setShowAddBOM] = useState(false);
+  const [editingBOM, setEditingBOM] = useState<BOMComponent | null>(null);
   const [serviceDialog, setServiceDialog] = useState<{ key: number; record?: MaintenanceRecord } | null>(null);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [breakdownNotes, setBreakdownNotes] = useState('');
@@ -67,7 +68,27 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
     doorAccess: s?.doorAccess || '',
     chassisNumber: s?.chassisNumber || '',
   });
-  const [bomForm, setBomForm] = useState({ type: 'OTHER' as BOMComponent['type'], name: '', manufacturer: '', model: '', serialNumber: '', installedDate: '' });
+  const emptyBomForm = { type: 'OTHER' as BOMComponent['type'], name: '', manufacturer: '', model: '', serialNumber: '', installedDate: '', warrantyExpiry: '', notes: '' };
+  const [bomForm, setBomForm] = useState(emptyBomForm);
+  const openAddBOM = () => {
+    setEditingBOM(null);
+    setBomForm(emptyBomForm);
+    setShowAddBOM(true);
+  };
+  const openEditBOM = (c: BOMComponent) => {
+    setEditingBOM(c);
+    setBomForm({
+      type: c.type,
+      name: c.name,
+      manufacturer: c.manufacturer ?? '',
+      model: c.model ?? '',
+      serialNumber: c.serialNumber ?? '',
+      installedDate: c.installedDate ?? '',
+      warrantyExpiry: c.warrantyExpiry ?? '',
+      notes: c.notes ?? '',
+    });
+    setShowAddBOM(true);
+  };
   const done = (msg: string) => {
     toast.success(msg);
     router.refresh();
@@ -97,17 +118,22 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
     } else failed(r);
   };
 
-  const handleAddBOM = async () => {
+  const handleSaveBOM = async () => {
     if (!bomForm.name.trim()) {
       toast.error('Enter a component name');
       return;
     }
     const clean = Object.fromEntries(Object.entries(bomForm).map(([k, v]) => [k, v.trim() || undefined])) as typeof bomForm;
-    const r = await addBOMComponent(unit.id, { ...clean, type: bomForm.type, name: bomForm.name.trim() }).catch(() => ({ success: false, error: 'Connection problem, please try again' }));
+    const payload = { ...clean, type: bomForm.type, name: bomForm.name.trim() };
+    const r = await (editingBOM
+      ? updateBOMComponent(unit.id, editingBOM.id, payload)
+      : addBOMComponent(unit.id, payload)
+    ).catch(() => ({ success: false, error: 'Connection problem, please try again' }));
     if (r.success) {
       setShowAddBOM(false);
-      setBomForm({ type: 'OTHER', name: '', manufacturer: '', model: '', serialNumber: '', installedDate: '' });
-      done('Component added');
+      setEditingBOM(null);
+      setBomForm(emptyBomForm);
+      done(editingBOM ? 'Component updated' : 'Component added');
     } else failed(r);
   };
 
@@ -190,7 +216,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
       />
 
       {unit.breakdown && (
-        <div className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-red-200 bg-red-50/70 px-4 py-3 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50/70 px-4 py-3 sm:flex-row sm:items-center">
           <TriangleAlert className="size-5 shrink-0 text-red-600" />
           <div className="min-w-0 flex-1 text-sm">
             <div className="font-semibold text-red-900">
@@ -212,7 +238,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
       {currentBooking && (
         <Link
           href={`/bookings/${currentBooking.id}`}
-          className="group flex items-center gap-4 rounded-[var(--radius-lg)] border border-sky-200 bg-sky-50/60 px-4 py-3 hover:bg-sky-50"
+          className="group flex items-center gap-4 rounded-lg border border-sky-200 bg-sky-50/60 px-4 py-3 hover:bg-sky-50"
         >
           <span className="size-2 rounded-full bg-sky-500" />
           <div className="min-w-0 flex-1 text-sm">
@@ -321,7 +347,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
         <Panel
           title="Bill of materials"
           action={
-            <Button variant="outline" size="sm" onClick={() => setShowAddBOM(true)} className="h-8 gap-1 px-2.5 text-xs">
+            <Button variant="outline" size="sm" onClick={openAddBOM} className="h-8 gap-1 px-2.5 text-xs">
               <Plus /> Add component
             </Button>
           }
@@ -348,10 +374,19 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
                       <td className="px-4 py-3 text-muted-foreground">{[c.manufacturer, c.model].filter(Boolean).join(' · ') || '—'}</td>
                       <td className="hidden px-4 py-3 font-mono text-xs text-muted-foreground md:table-cell">{c.serialNumber || '—'}</td>
                       <td className="tabular hidden px-4 py-3 text-muted-foreground md:table-cell">{formatDate(c.installedDate, { year: true })}</td>
-                      <td className="pr-3 text-right">
+                      <td className="pr-3 flex items-center gap-2 justify-center mt-3">
+                        <button
+                          onClick={() => openEditBOM(c)}
+                          className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground opacity-60 hover:bg-muted
+                            hover:text-foreground group-hover:opacity-100"
+                          aria-label={`Edit ${c.name}`}
+                        >
+                          <Pencil className="size-4" />
+                        </button>
                         <button
                           onClick={() => handleRemoveBOM(c.id)}
-                          className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground opacity-60 hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+                          className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground opacity-60 hover:bg-red-50
+                            hover:text-red-600 group-hover:opacity-100"
                           aria-label={`Remove ${c.name}`}
                         >
                           <Trash2 className="size-4" />
@@ -392,7 +427,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
                         {formatDate(b.startDate)} – {formatDate(b.endDate)}
                         <div className="text-xs text-muted-foreground">{daysBetween(b.startDate, b.endDate)} days</div>
                       </td>
-                      <td className="hidden max-w-[260px] truncate px-4 py-3 text-muted-foreground md:table-cell">{b.deliveryAddress}</td>
+                      <td className="hidden max-w-65 truncate px-4 py-3 text-muted-foreground md:table-cell">{b.deliveryAddress}</td>
                       <td className="px-4 py-3">
                         <StatusBadge status={b.status} />
                       </td>
@@ -483,47 +518,118 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
       )}
 
       {/* Edit unit */}
-      <Dialog open={isEditing} onOpenChange={setIsEditing}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Edit {unit.id}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Field label="Unit type">
-              <select value={editForm.unitType} onChange={(e) => setEditForm((p) => ({ ...p, unitType: e.target.value as UnitType }))} className={selectClass}>
-                {(Object.keys(UNIT_TYPE_LABELS) as UnitType[]).map((t) => (
-                  <option key={t} value={t}>
-                    {UNIT_TYPE_LABELS[t]}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Size">
-              <select value={editForm.size} onChange={(e) => setEditForm((p) => ({ ...p, size: e.target.value as UnitSize }))} className={selectClass}>
-                {(Object.keys(UNIT_SIZE_LABELS) as UnitSize[]).map((v) => (
-                  <option key={v} value={v}>
-                    {UNIT_SIZE_LABELS[v]}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Data logger ID" hint="The device ID from your data logger software">
-              <Input value={editForm.dataLoggerId} onChange={(e) => setEditForm((p) => ({ ...p, dataLoggerId: e.target.value }))} placeholder="e.g. DL-2041" className="h-9 font-mono" />
-            </Field>
-            <Field label="Notes">
-              <textarea value={editForm.notes} onChange={(e) => setEditForm((p) => ({ ...p, notes: e.target.value }))} className={textareaClass} />
-            </Field>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditing(false)} className="h-9 px-4">
-              Cancel
-            </Button>
-            <Button onClick={handleSaveEdit} className="h-9 px-4 hover:bg-[var(--brand-red-dark)]">
-              Save changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+     
+<Dialog open={isEditing} onOpenChange={setIsEditing}>
+  <DialogContent className="sm:max-w-120 overflow-hidden rounded-2xl border border-gray-200 bg-white p-0 shadow-2xl">
+    <DialogHeader className="border-b border-gray-100 bg-gray-50/80 px-6 py-5">
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-(--brand-red)">
+          <Pencil className="h-5 w-5" />
+        </div>
+
+        <div className="space-y-1">
+          <DialogTitle className="text-base font-semibold text-gray-900">
+            Edit unit
+          </DialogTitle>
+          <p className="text-xs text-gray-500">
+            Update the configuration and details for{" "}
+            <span className="font-medium text-gray-700">{unit.id}</span>
+          </p>
+        </div>
+      </div>
+    </DialogHeader>
+
+    <div className="space-y-5 px-6 py-6">
+      <Field label="Unit type">
+        <select
+          value={editForm.unitType}
+          onChange={(e) =>
+            setEditForm((p) => ({
+              ...p,
+              unitType: e.target.value as UnitType,
+            }))
+          }
+          className={`${selectClass} h-10 rounded-lg border-gray-200 bg-gray-50/50 text-sm transition focus:border-(--brand-red) focus:bg-white focus:ring-2 focus:ring-(--brand-red)/10`}
+        >
+          {(Object.keys(UNIT_TYPE_LABELS) as UnitType[]).map((t) => (
+            <option key={t} value={t}>
+              {UNIT_TYPE_LABELS[t]}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <Field label="Size">
+        <select
+          value={editForm.size}
+          onChange={(e) =>
+            setEditForm((p) => ({
+              ...p,
+              size: e.target.value as UnitSize,
+            }))
+          }
+          className={`${selectClass} h-10 rounded-lg border-gray-200 bg-gray-50/50 text-sm transition focus:border-(--brand-red) focus:bg-white focus:ring-2 focus:ring-(--brand-red)/10`}
+        >
+          {(Object.keys(UNIT_SIZE_LABELS) as UnitSize[]).map((v) => (
+            <option key={v} value={v}>
+              {UNIT_SIZE_LABELS[v]}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <Field
+        label="Data logger ID"
+        hint="The unique device ID from your data logger software."
+      >
+        <Input
+          value={editForm.dataLoggerId}
+          onChange={(e) =>
+            setEditForm((p) => ({
+              ...p,
+              dataLoggerId: e.target.value,
+            }))
+          }
+          placeholder="e.g. DL-2041"
+          className="h-10 rounded-lg border-gray-200 bg-gray-50/50 font-mono text-sm transition placeholder:font-sans focus:border-(--brand-red) focus:bg-white focus:ring-2 focus:ring-(--brand-red)/10"
+        />
+      </Field>
+
+      <Field label="Notes" hint="Add any additional information about this unit.">
+        <textarea
+          value={editForm.notes}
+          onChange={(e) =>
+            setEditForm((p) => ({
+              ...p,
+              notes: e.target.value,
+            }))
+          }
+          placeholder="Enter notes here..."
+          rows={4}
+          className={`${textareaClass} min-h-25 rounded-lg border-gray-200 bg-gray-50/50 text-sm transition placeholder:text-gray-400 focus:border-(--brand-red) focus:bg-white focus:ring-2 focus:ring-(--brand-red)/10`}
+        />
+      </Field>
+    </div>
+
+    <DialogFooter className="flex-row justify-end gap-2 border-t border-gray-100 bg-gray-50/70 px-6 py-4">
+      <Button
+        variant="outline"
+        onClick={() => setIsEditing(false)}
+        className="h-9 rounded-lg border-gray-200 bg-white px-4 text-sm font-medium hover:bg-gray-100"
+      >
+        Cancel
+      </Button>
+
+      <Button
+        onClick={handleSaveEdit}
+        className="h-9 rounded-lg bg-(--brand-red) px-5 text-sm font-medium text-white shadow-sm transition hover:bg-(--brand-red-dark)"
+      >
+        Save changes
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
 
       {/* Specs */}
       <Dialog open={showSpecsEdit} onOpenChange={setShowSpecsEdit}>
@@ -571,7 +677,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
             <Button variant="outline" onClick={() => setShowSpecsEdit(false)} className="h-9 px-4">
               Cancel
             </Button>
-            <Button onClick={handleSaveSpecs} className="h-9 px-4 hover:bg-[var(--brand-red-dark)]">
+            <Button onClick={handleSaveSpecs} className="h-9 px-4 hover:bg-(--brand-red-dark)">
               Save specifications
             </Button>
           </DialogFooter>
@@ -582,7 +688,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
       <Dialog open={showAddBOM} onOpenChange={setShowAddBOM}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Add component</DialogTitle>
+            <DialogTitle className="text-base font-semibold">{editingBOM ? 'Edit component' : 'Add component'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
@@ -610,14 +716,20 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
               <Field label="Installed">
                 <Input type="date" value={bomForm.installedDate} onChange={(e) => setBomForm((p) => ({ ...p, installedDate: e.target.value }))} className="h-9" />
               </Field>
+              <Field label="Warranty expiry">
+                <Input type="date" value={bomForm.warrantyExpiry} onChange={(e) => setBomForm((p) => ({ ...p, warrantyExpiry: e.target.value }))} className="h-9" />
+              </Field>
             </div>
+            <Field label="Notes">
+              <textarea value={bomForm.notes} onChange={(e) => setBomForm((p) => ({ ...p, notes: e.target.value }))} className={textareaClass} />
+            </Field>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddBOM(false)} className="h-9 px-4">
               Cancel
             </Button>
-            <Button onClick={handleAddBOM} className="h-9 px-4 hover:bg-[var(--brand-red-dark)]">
-              Add component
+            <Button onClick={handleSaveBOM} className="h-9 px-4 hover:bg-(--brand-red-dark)">
+              {editingBOM ? 'Save changes' : 'Add component'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -684,7 +796,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
             <Button variant="outline" onClick={() => setScheduleOpen(false)} className="h-9 px-4">
               Cancel
             </Button>
-            <Button onClick={() => saveSchedule(scheduleDate)} disabled={!scheduleDate} className="h-9 px-4 hover:bg-[var(--brand-red-dark)]">
+            <Button onClick={() => saveSchedule(scheduleDate)} disabled={!scheduleDate} className="h-9 px-4 hover:bg-(--brand-red-dark)">
               Save date
             </Button>
           </DialogFooter>

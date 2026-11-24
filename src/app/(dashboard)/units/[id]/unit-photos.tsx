@@ -98,7 +98,7 @@ export function UnitPhotos({ unitId, photos }: { unitId: string; photos: string[
       ) : (
         <ul className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-4">
           {photos.map((url, i) => (
-            <li key={url} className="group relative aspect-[4/3] overflow-hidden rounded-md border bg-muted">
+            <li key={url} className="group relative aspect-4/3 overflow-hidden rounded-md border bg-muted">
               <button type="button" onClick={() => setViewing(url)} className="block size-full" aria-label={`View photo ${i + 1}`}>
                 {/* eslint-disable-next-line @next/next/no-img-element -- served from the private uploads route */}
                 <img src={url} alt={`Unit photo ${i + 1}`} className="size-full object-cover transition-transform group-hover:scale-[1.02]" loading="lazy" />
