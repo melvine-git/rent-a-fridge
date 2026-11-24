@@ -1,7 +1,7 @@
 'use client';
 
 import { Input } from '@/components/ui/input';
-import { Field } from '@/components/app/field';
+import { Field, selectClass } from '@/components/app/field';
 import type { Customer, PostalAddress } from '@/types';
 
 export interface CustomerDraft {
@@ -12,6 +12,7 @@ export interface CustomerDraft {
   contactJobTitle: string;
   contactEmail: string;
   contactPhone: string;
+  paymentTerms: '' | 'ADVANCE' | 'CREDIT';
   address: PostalAddress;
 }
 
@@ -25,6 +26,7 @@ export const emptyCustomerDraft = (): CustomerDraft => ({
   contactJobTitle: '',
   contactEmail: '',
   contactPhone: '',
+  paymentTerms: '',
   address: { line1: '', line2: '', town: '', county: '', postcode: '', country: DEFAULT_COUNTRY },
 });
 
@@ -39,6 +41,7 @@ export function draftFromCustomer(c: Customer): CustomerDraft {
     contactJobTitle: c.contactJobTitle ?? '',
     contactEmail: c.contactEmail ?? '',
     contactPhone: c.contactPhone ?? '',
+    paymentTerms: c.paymentTerms ?? '',
     address: {
       line1: a?.line1 ?? c.address,
       line2: a?.line2 ?? '',
@@ -61,7 +64,7 @@ export function customerDraftError(d: CustomerDraft): string | null {
 
 export function draftToCustomer(
   d: CustomerDraft
-): Pick<Customer, 'name' | 'phone' | 'email' | 'address' | 'invoiceAddress' | 'contactName' | 'contactJobTitle' | 'contactEmail' | 'contactPhone'> {
+): Pick<Customer, 'name' | 'phone' | 'email' | 'address' | 'invoiceAddress' | 'contactName' | 'contactJobTitle' | 'contactEmail' | 'contactPhone' | 'paymentTerms'> {
   const t = (v?: string) => v?.trim() || undefined;
   const invoiceAddress: PostalAddress = {
     line1: d.address.line1.trim(),
@@ -82,6 +85,7 @@ export function draftToCustomer(
     contactJobTitle: d.contactJobTitle.trim(),
     contactEmail: d.contactEmail.trim(),
     contactPhone: d.contactPhone.trim(),
+    paymentTerms: d.paymentTerms || undefined, // cleared value removes the field on save
     address: invoiceAddress.line1,
     invoiceAddress,
   };
@@ -117,6 +121,13 @@ export function CustomerFields({ value, onChange }: { value: CustomerDraft; onCh
           </Field>
           <Field label="Contact telephone">
             <Input value={value.contactPhone} onChange={(e) => set('contactPhone', e.target.value)} placeholder="+44 28 …" className="h-9" autoComplete="tel" />
+          </Field>
+          <Field label="Payment terms">
+            <select value={value.paymentTerms} onChange={(e) => set('paymentTerms', e.target.value as CustomerDraft['paymentTerms'])} className={selectClass}>
+              <option value="">Not set</option>
+              <option value="ADVANCE">Pays in advance</option>
+              <option value="CREDIT">On credit</option>
+            </select>
           </Field>
         </div>
       </fieldset>

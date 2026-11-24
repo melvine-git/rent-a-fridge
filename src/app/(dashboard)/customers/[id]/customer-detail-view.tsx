@@ -585,6 +585,10 @@ export function CustomerDetailView({
                 {customer.address}
               </DetailItem>
 
+              <DetailItem label="Payment terms">
+                {customer.paymentTerms === 'ADVANCE' ? 'Pays in advance' : customer.paymentTerms === 'CREDIT' ? 'On credit' : <span className="text-muted-foreground">Not set</span>}
+              </DetailItem>
+
               <DetailItem label="Contact person">
                 {customer.contactName ? (
                   <span>
@@ -796,7 +800,7 @@ export function CustomerDetailView({
               Edit customer
             </DialogTitle>
             <DialogDescription>
-              Update the customer's contact and accounting details.
+              Update the customer&rsquo;s contact and accounting details.
             </DialogDescription>
           </DialogHeader>
 

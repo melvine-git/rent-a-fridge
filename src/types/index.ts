@@ -49,6 +49,7 @@ export interface Customer {
   address: string; // Default/primary invoice address, formatted on one line
   invoiceAddress?: PostalAddress; // Structured invoice address (source of `address` when set)
   addresses?: CustomerAddress[]; // Additional delivery addresses
+  paymentTerms?: 'ADVANCE' | 'CREDIT'; // how this customer is expected to pay
   // Named contact person at the customer
   contactName?: string;
   contactJobTitle?: string;
@@ -195,6 +196,8 @@ export interface Booking {
   collectionDocketId?: string;
   emailSent?: boolean;
   smsSent?: boolean;
+  paymentStatus?: 'UNPAID' | 'PAID'; // informational only — dispatch is never blocked on it
+  paidAt?: string; // YYYY-MM-DD when paymentStatus became PAID
   cancelledAt?: string; // ISO timestamp
   cancellationReason?: string;
 }

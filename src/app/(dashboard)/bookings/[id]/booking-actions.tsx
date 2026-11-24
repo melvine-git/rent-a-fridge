@@ -9,8 +9,8 @@ import { Field, textareaClass } from '@/components/app/field';
 import { JobDrawer, type JobTarget } from '@/components/jobs/job-drawer';
 import { EditBookingSheet } from './edit-booking-sheet';
 import { deliveredChecklists, type LineDetail } from './booking-units';
-import { cancelBooking } from '@/lib/actions';
-import { Ban, Mail, MessageSquare, PackageCheck, Pencil, Truck } from 'lucide-react';
+import { cancelBooking, setBookingPaid } from '@/lib/actions';
+import { Ban, CircleCheck, Mail, MessageSquare, PackageCheck, Pencil, PoundSterling, Truck } from 'lucide-react';
 import type { Staff, Unit } from '@/types';
 
 interface Props {
@@ -30,7 +30,9 @@ export function BookingActions({ reference, lines, staff, units }: Props) {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [isCancelling, startCancel] = useTransition();
+  const [isPaying, startPay] = useTransition();
   const booking = lines[0];
+  const paid = lines.length > 0 && lines.every((l) => l.paymentStatus === 'PAID');
 
   const toDeliver = lines.filter((l) => l.status === 'CONFIRMED');
   const onHire = lines.filter((l) => l.status === 'ON_HIRE');
@@ -49,8 +51,27 @@ export function BookingActions({ reference, lines, staff, units }: Props) {
       }
     });
 
+  const togglePaid = () =>
+    startPay(async () => {
+      const result = await setBookingPaid(reference, !paid);
+      if (result.success) {
+        toast.success(paid ? 'Marked as unpaid' : 'Payment recorded', { description: paid ? undefined : 'Dispatch can proceed.' });
+        router.refresh();
+      } else {
+        toast.error('Could not update payment', { description: result.error });
+      }
+    });
+
   return (
     <>
+      <button
+        className={`${outlineBtn} ${paid ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : ''}`}
+        onClick={togglePaid}
+        disabled={isPaying}
+        title={paid ? 'Payment received — click to mark unpaid' : 'Record that payment has been made (dispatch can happen)'}
+      >
+        {paid ? <CircleCheck className="size-4" /> : <PoundSterling className="size-4" />} {paid ? 'Paid' : 'Mark paid'}
+      </button>
       <button className={outlineBtn} onClick={() => toast.success('Confirmation email sent', { description: `Booking details sent to ${booking.customer.email || 'customer'}` })}>
         <Mail className="size-4" /> <span className="hidden xl:inline">Email</span>
       </button>

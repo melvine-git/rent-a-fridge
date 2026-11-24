@@ -1448,6 +1448,8 @@ export interface BookingListItem {
   deliveryAddress: string;
   poNumber?: string;
   total: number | null;
+  /** Payment recorded on every line — informational only */
+  paid: boolean;
   /** Not delivered although the delivery date has passed */
   lateDelivery: boolean;
   /** On hire past the collection date */
@@ -1560,6 +1562,7 @@ export async function getBookingsList(): Promise<BookingListItem[]> {
         deliveryAddress: first.deliveryAddress,
         poNumber: first.quote?.poNumber,
         total: priced ? quoteTotals(lines, first.quote).total : null,
+        paid: lines.every((l) => l.paymentStatus === 'PAID'),
         lateDelivery: lines.some((l) => l.status === 'CONFIRMED' && l.startDate < todayStr),
         overdueCollection: lines.some((l) => l.status === 'ON_HIRE' && l.endDate < todayStr),
         lines: lines.map((l) => ({
@@ -1984,6 +1987,27 @@ export async function setNotificationRead(
   read: boolean
 ): Promise<{ success: boolean; error?: string }> {
   return saveNotificationState(id, { read });
+}
+
+/**
+ * Record that payment has been made (or un-mark it) on every line of the booking.
+ * Informational only — it never blocks or unblocks dispatch.
+ */
+export async function setBookingPaid(
+  reference: string,
+  paid: boolean
+): Promise<{ success: boolean; error?: string }> {
+  const db = await readDb();
+  const lines = db.bookings.filter((b) => groupIdOf(b) === reference);
+  if (!lines.length) return { success: false, error: 'Booking not found' };
+  for (const b of lines) {
+    b.paymentStatus = paid ? 'PAID' : 'UNPAID';
+    if (paid) b.paidAt = today();
+    else delete b.paidAt;
+  }
+  await writeDb(db);
+  revalidatePath('/');
+  return { success: true };
 }
 
 export async function dismissNotification(

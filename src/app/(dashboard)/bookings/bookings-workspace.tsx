@@ -160,6 +160,7 @@ function BookingsList({
                   <td className="px-4 py-3">
                     <div className="flex flex-col items-start gap-1">
                       <StatusBadge status={b.status} />
+                      {b.paid && <span className="text-[11px] font-medium text-emerald-600">Paid · dispatch can proceed</span>}
                       {b.lateDelivery && <span className="text-[11px] font-medium text-red-600">Delivery late · {formatDate(b.lines.find((l) => l.status === 'CONFIRMED' && l.startDate < today)?.startDate)}</span>}
                       {b.overdueCollection && <span className="text-[11px] font-medium text-red-600">Collection overdue</span>}
                     </div>
