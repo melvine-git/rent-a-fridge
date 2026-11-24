@@ -21,6 +21,7 @@ export const UNIT_TYPE_LABELS: Record<UnitType, string> = {
   COLD_STORE: 'Cold store',
   UPRIGHT_FRIDGE: 'Upright fridge',
   CHEST_FREEZER: 'Chest freezer',
+  STATIC: "static"
 };
 
 export const UNIT_SIZE_LABELS: Record<UnitSize, string> = {

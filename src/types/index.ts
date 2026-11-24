@@ -6,7 +6,7 @@ export type UnitSize = 'SMALL' | 'MEDIUM' | 'LARGE';
 /** Site power supply. INDUSTRIAL is shown as 'Commando'; OTHER uses Booking.powerOther. */
 export type PowerType = 'STANDARD' | 'INDUSTRIAL' | 'OTHER';
 export type RatePeriod = 'DAY' | 'WEEK';
-export type UnitType = 'COLD_STORE' | 'UPRIGHT_FRIDGE' | 'CHEST_FREEZER';
+export type UnitType = 'COLD_STORE' | 'UPRIGHT_FRIDGE' | 'CHEST_FREEZER' | 'STATIC';
 export type CableLength = '5m' | '10m' | '15m' | '20m' | '25m' | '30m';
 export type CalendarView = 'week' | 'month';
 

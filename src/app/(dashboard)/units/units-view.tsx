@@ -54,6 +54,7 @@ const TYPE_TINT: Record<UnitType, string> = {
   COLD_STORE: 'bg-red-50 text-[var(--brand-red)]',
   UPRIGHT_FRIDGE: 'bg-emerald-50 text-emerald-700',
   CHEST_FREEZER: 'bg-stone-100 text-stone-600',
+  STATIC: 'bg-gray-100 text-gray-600',
 };
 
 const STATUS_PILL: Record<UnitDisplayStatus, { label: string; icon: LucideIcon; cls: string }> = {
