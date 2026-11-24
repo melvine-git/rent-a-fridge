@@ -1260,7 +1260,7 @@ const DEFAULT_SERVICEABLE_COMPONENTS: Omit<ServiceableComponent, 'id'>[] = [
   { type: 'CONTROLLER', name: 'Temperature controller', description: 'Digital temperature control unit', intervalMonths: 12 },
   { type: 'FAN_MOTOR', name: 'Fan motor', description: 'Evaporator and condenser fan motors', intervalMonths: 6 },
   { type: 'OTHER', name: 'Door seals', description: 'Rubber door gaskets and seals', intervalMonths: 12 },
-  { type: 'OTHER', name: 'Refrigerant', description: 'Refrigerant gas levels and pressure', intervalMonths: 12 },
+  { type: 'REFRIGERANT', name: 'Refrigerant', description: 'Refrigerant gas levels and pressure', intervalMonths: 12 },
   { type: 'OTHER', name: 'Electrical', description: 'Wiring, connections and safety switches', intervalMonths: 12 },
   { type: 'OTHER', name: 'Drainage', description: 'Condensate drain and tray', intervalMonths: 6 },
 ];

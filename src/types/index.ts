@@ -77,13 +77,14 @@ export interface UnitSpecifications {
 
 export interface BOMComponent {
   id: string;
-  type: 'COMPRESSOR' | 'EVAPORATOR' | 'CONTROLLER' | 'FAN_MOTOR' | 'CONTACTOR' | 'OTHER';
+  type: 'COMPRESSOR' | 'EVAPORATOR' | 'CONTROLLER' | 'FAN_MOTOR' | 'CONTACTOR' | 'REFRIGERANT' | 'PACKAGED_UNIT' | 'LIGHTS' | 'ACCESSORY' | 'OTHER';
   name: string;
   manufacturer?: string;
   model?: string;
   serialNumber?: string;
   installedDate?: string;
   warrantyExpiry?: string;
+  refrigerantCharge?: string; // e.g. "80g", only meaningful for REFRIGERANT
   notes?: string;
 }
 

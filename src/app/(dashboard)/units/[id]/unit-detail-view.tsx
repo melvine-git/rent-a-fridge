@@ -72,7 +72,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
     doorAccess: s?.doorAccess || '',
     chassisNumber: s?.chassisNumber || '',
   });
-  const emptyBomForm = { type: 'OTHER' as BOMComponent['type'], name: '', manufacturer: '', model: '', serialNumber: '', installedDate: '', warrantyExpiry: '', notes: '' };
+  const emptyBomForm = { type: 'OTHER' as BOMComponent['type'], name: '', manufacturer: '', model: '', serialNumber: '', installedDate: '', warrantyExpiry: '', refrigerantCharge: '', notes: '' };
   const [bomForm, setBomForm] = useState(emptyBomForm);
   const openAddBOM = () => {
     setEditingBOM(null);
@@ -89,6 +89,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
       serialNumber: c.serialNumber ?? '',
       installedDate: c.installedDate ?? '',
       warrantyExpiry: c.warrantyExpiry ?? '',
+      refrigerantCharge: c.refrigerantCharge ?? '',
       notes: c.notes ?? '',
     });
     setShowAddBOM(true);
@@ -130,7 +131,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
       return;
     }
     const clean = Object.fromEntries(Object.entries(bomForm).map(([k, v]) => [k, v.trim() || undefined])) as typeof bomForm;
-    const payload = { ...clean, type: bomForm.type, name: bomForm.name.trim() };
+    const payload = { ...clean, type: bomForm.type, name: bomForm.name.trim(), refrigerantCharge: bomForm.type === 'REFRIGERANT' ? clean.refrigerantCharge : undefined };
     const r = await (editingBOM
       ? updateBOMComponent(unit.id, editingBOM.id, payload)
       : addBOMComponent(unit.id, payload)
@@ -395,7 +396,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
                     <tr key={c.id} className="group">
                       <td className="px-4 py-3">
                         <div className="font-medium text-foreground">{c.name}</div>
-                        <div className="text-xs text-muted-foreground">{COMPONENT_LABELS[c.type]}</div>
+                        <div className="text-xs text-muted-foreground">{COMPONENT_LABELS[c.type]}{c.refrigerantCharge ? ` · ${c.refrigerantCharge}` : ''}</div>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{[c.manufacturer, c.model].filter(Boolean).join(' · ') || '—'}</td>
                       <td className="hidden px-4 py-3 font-mono text-xs text-muted-foreground md:table-cell">{c.serialNumber || '—'}</td>
@@ -760,6 +761,11 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
               <Field label="Warranty expiry">
                 <Input type="date" value={bomForm.warrantyExpiry} onChange={(e) => setBomForm((p) => ({ ...p, warrantyExpiry: e.target.value }))} className="h-9" />
               </Field>
+              {bomForm.type === 'REFRIGERANT' && (
+                <Field label="Charge">
+                  <Input value={bomForm.refrigerantCharge} onChange={(e) => setBomForm((p) => ({ ...p, refrigerantCharge: e.target.value }))} placeholder="e.g. 80g" className="h-9" />
+                </Field>
+              )}
             </div>
             <Field label="Notes">
               <textarea value={bomForm.notes} onChange={(e) => setBomForm((p) => ({ ...p, notes: e.target.value }))} className={textareaClass} />

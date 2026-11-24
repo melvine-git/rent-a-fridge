@@ -6,6 +6,10 @@ export const COMPONENT_LABELS: Record<BOMComponent['type'], string> = {
   CONTROLLER: 'Controller',
   FAN_MOTOR: 'Fan motor',
   CONTACTOR: 'Contactor',
+  REFRIGERANT: 'Refrigerant',
+  PACKAGED_UNIT: 'Packaged unit',
+  LIGHTS: 'Lights',
+  ACCESSORY: 'Accessory',
   OTHER: 'Other',
 };
 
