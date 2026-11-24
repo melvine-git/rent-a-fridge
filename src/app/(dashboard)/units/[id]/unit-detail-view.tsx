@@ -29,6 +29,7 @@ interface Props {
   unit: Unit;
   bookingHistory: BookingWithCustomer[];
   currentBooking: BookingWithCustomer | null;
+  allUnits: Unit[];
 }
 
 export type UnitTab = 'overview' | 'bom' | 'bookings' | 'maintenance';
@@ -36,7 +37,7 @@ type Tab = UnitTab;
 
 
 
-export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTab }: Props & { initialTab?: UnitTab }) {
+export function UnitDetailView({ unit, bookingHistory, currentBooking, allUnits, initialTab }: Props & { initialTab?: UnitTab }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>(initialTab ?? 'overview');
   const [isEditing, setIsEditing] = useState(false);
@@ -808,6 +809,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
           key={serviceDialog.key}
           open
           onOpenChange={(o) => !o && setServiceDialog(null)}
+          units={allUnits}
           unitId={unit.id}
           record={serviceDialog.record}
           onSaved={() => {

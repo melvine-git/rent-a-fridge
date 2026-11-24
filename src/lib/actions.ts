@@ -1177,8 +1177,16 @@ export async function saveMaintenanceRecord(
   const unit = db.units.find((u) => u.id === unitId);
   if (!unit) return { success: false, error: 'Unit not found' };
   unit.maintenanceHistory ??= [];
-  const existing = record.id ? unit.maintenanceHistory.find((r) => r.id === record.id) : undefined;
-  if (record.id && !existing) return { success: false, error: 'Service record not found' };
+  let existing = record.id ? unit.maintenanceHistory.find((r) => r.id === record.id) : undefined;
+  let moved = false;
+  if (record.id && !existing) {
+    // The record lives on another unit — the save is reassigning it (e.g. logged on the wrong unit)
+    const source = db.units.find((u) => u.maintenanceHistory?.some((r) => r.id === record.id));
+    const i = source?.maintenanceHistory?.findIndex((r) => r.id === record.id) ?? -1;
+    if (!source || i < 0) return { success: false, error: 'Service record not found' };
+    [existing] = source.maintenanceHistory!.splice(i, 1);
+    moved = true;
+  }
 
   const attachments = [...(existing?.attachments ?? [])];
   for (const f of uploads) {
@@ -1198,7 +1206,7 @@ export async function saveMaintenanceRecord(
     cost: existing?.cost,
     attachments,
   };
-  if (existing) Object.assign(existing, clean);
+  if (existing && !moved) Object.assign(existing, clean);
   else unit.maintenanceHistory.unshift(clean);
   // A service that sets its own next date replaces any manually scheduled one
   if (clean.nextServiceDate) unit.nextServiceDate = undefined;
@@ -1893,7 +1901,7 @@ export async function getUnitDetail(id: string) {
     .filter((b) => b.customer)
     .sort((a, b) => b.startDate.localeCompare(a.startDate));
   const currentBooking = bookingHistory.find((b) => b.status === 'ON_HIRE') ?? null;
-  return { unit, bookingHistory, currentBooking };
+  return { unit, bookingHistory, currentBooking, allUnits: db.units };
 }
 
 export async function getCustomersWithStats(): Promise<CustomerWithStats[]> {
