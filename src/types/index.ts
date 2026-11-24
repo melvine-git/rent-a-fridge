@@ -60,10 +60,13 @@ export interface UnitDimensions {
   height: number; // mm
 }
 
+export type CapacityUnit = 'M2' | 'M3' | 'L';
+
 export interface UnitSpecifications {
   externalDimensions?: UnitDimensions;
   internalDimensions?: UnitDimensions;
-  cubicCapacity?: number; // cubic meters
+  cubicCapacity?: number; // capacity value, measured in `capacityUnit`
+  capacityUnit?: CapacityUnit; // absent on older rows = treated as m³
   doorAccess?: string; // e.g., "Rear doors", "Side access"
   chassisNumber?: string;
   photoUrls?: string[];

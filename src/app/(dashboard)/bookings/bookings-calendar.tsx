@@ -35,7 +35,7 @@ import type { BookingListItem } from '@/lib/actions';
 import { cn } from '@/lib/utils';
 import { GBP, STATUS_META, TONE_CLASSES, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, nextServiceDate, powerLabel, unitDisplayStatus, type UnitDisplayStatus } from '@/lib/domain';
 import { bookingRef } from '@/lib/jobs';
-import { daysBetween, formatDate, formatDateRange, formatPhone, toISODate } from '@/lib/format';
+import { daysBetween, formatCapacity, formatDate, formatDateRange, formatPhone, toISODate } from '@/lib/format';
 
 export type PlannerView = 'timeline' | 'list';
 
@@ -666,7 +666,7 @@ function UnitHoverCard({ unit, booking, x, y, today, occupancy }: { unit: Unit; 
   const photo = unit.specifications?.photoUrls?.[0];
   const dims = unit.specifications?.externalDimensions;
   const service = nextServiceDate(unit);
-  const capacity = unit.specifications?.cubicCapacity;
+  const capacity = formatCapacity(unit.specifications);
   return (
     <div className="pointer-events-none fixed z-50 w-75 overflow-hidden rounded-xl border bg-white shadow-[0_12px_32px_-8px_rgb(0_0_0/0.25)]" style={{ left: x, top: y }} role="tooltip">
       <div className="flex items-center gap-3 border-b p-3.5">
@@ -689,7 +689,7 @@ function UnitHoverCard({ unit, booking, x, y, today, occupancy }: { unit: Unit; 
         </div>
       </div>
       <dl className="grid grid-cols-2 gap-x-3 gap-y-2.5 p-3.5 text-xs">
-        <HoverFact label="Capacity" value={capacity ? `${capacity} m³` : '—'} />
+        <HoverFact label="Capacity" value={capacity ?? '—'} />
         <HoverFact label="Occupancy (view)" value={`${occupancy}%`} />
         <HoverFact label="Next service" value={service ? formatDate(service) : 'Not scheduled'} warn={!!service && service < today} />
         <HoverFact label="Size (L×W×H)" value={dims ? `${dims.length}×${dims.width}×${dims.height}` : '—'} />

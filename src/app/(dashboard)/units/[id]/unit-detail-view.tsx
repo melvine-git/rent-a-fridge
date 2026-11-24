@@ -19,9 +19,9 @@ import { UnitPhotos } from './unit-photos';
 import { ServiceRecordDialog, AttachmentLinks } from '@/components/maintenance/service-record-dialog';
 import { updateUnit, updateUnitSpecifications, addBOMComponent, updateBOMComponent, removeBOMComponent, setUnitStatus, setUnitBreakdown, setUnitNextService, deleteUnit } from '@/lib/actions';
 import { COMPONENT_LABELS, GBP, RECORD_TYPE_META, STATUS_META, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, nextServiceDate, unitDisplayStatus } from '@/lib/domain';
-import { daysBetween, daysFromToday, formatDate } from '@/lib/format';
+import { daysBetween, daysFromToday, formatCapacity, formatDate } from '@/lib/format';
 import { Activity, ArrowUpRight, CalendarClock, CalendarDays, Cpu, Pencil, Plus, Ruler, Trash2, TriangleAlert, Wrench } from 'lucide-react';
-import type { Unit, Booking, Customer, BOMComponent, MaintenanceRecord, UnitType, UnitSize, UnitStatus } from '@/types';
+import type { Unit, Booking, Customer, BOMComponent, CapacityUnit, MaintenanceRecord, UnitType, UnitSize, UnitStatus } from '@/types';
 
 type BookingWithCustomer = Booking & { customer: Customer };
 
@@ -66,6 +66,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
     intWidth: s?.internalDimensions?.width?.toString() || '',
     intHeight: s?.internalDimensions?.height?.toString() || '',
     cubicCapacity: s?.cubicCapacity?.toString() || '',
+    capacityUnit: s?.capacityUnit ?? ((s?.cubicCapacity ?? 1) < 1 ? 'L' : 'M3'),
     doorAccess: s?.doorAccess || '',
     chassisNumber: s?.chassisNumber || '',
   });
@@ -110,6 +111,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
       externalDimensions: specsForm.extLength ? { length: n(specsForm.extLength), width: n(specsForm.extWidth), height: n(specsForm.extHeight) } : undefined,
       internalDimensions: specsForm.intLength ? { length: n(specsForm.intLength), width: n(specsForm.intWidth), height: n(specsForm.intHeight) } : undefined,
       cubicCapacity: specsForm.cubicCapacity ? parseFloat(specsForm.cubicCapacity) : undefined,
+      capacityUnit: specsForm.cubicCapacity ? (specsForm.capacityUnit as CapacityUnit) : undefined,
       doorAccess: specsForm.doorAccess || undefined,
       chassisNumber: specsForm.chassisNumber || undefined,
     });
@@ -144,7 +146,21 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
     else failed(r);
   };
 
-  const handleSetStatus = async (status: UnitStatus) => {
+  const handleStatusChange = async (value: string) => {
+    if (value === 'BREAKDOWN') {
+      setBreakdownNotes(unit.breakdown?.notes ?? '');
+      setBreakdownOpen(true);
+      return;
+    }
+    const status = value as UnitStatus;
+    // Choosing a real status while broken down implies the unit is back in service
+    if (unit.breakdown) {
+      const fix = await setUnitBreakdown(unit.id, null);
+      if (!fix.success) {
+        failed(fix);
+        return;
+      }
+    }
     const r = await setUnitStatus(unit.id, status);
     if (r.success) done(`Status set to ${STATUS_META[status].label.toLowerCase()}`);
     else failed(r);
@@ -198,8 +214,8 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
         actions={
           <>
             <select
-              value={unit.status}
-              onChange={(e) => handleSetStatus(e.target.value as UnitStatus)}
+              value={unit.breakdown ? 'BREAKDOWN' : unit.status}
+              onChange={(e) => handleStatusChange(e.target.value)}
               className={`${selectClass.replace('w-full', 'w-auto')} font-medium`}
               aria-label="Change status"
             >
@@ -208,19 +224,10 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
                 On hire
               </option>
               <option value="MAINTENANCE">In maintenance</option>
+              <option value="BREAKDOWN" className="text-red-700">
+                Broken down
+              </option>
             </select>
-            {!unit.breakdown && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setBreakdownNotes('');
-                  setBreakdownOpen(true);
-                }}
-                className="h-9 gap-1.5 px-3 text-red-700 hover:bg-red-50"
-              >
-                <TriangleAlert /> Breakdown
-              </Button>
-            )}
             <Button variant="outline" onClick={() => setIsEditing(true)} className="h-9 gap-1.5 px-3">
               <Pencil /> Edit
             </Button>
@@ -292,7 +299,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
             sub:
               serviceDays === undefined ? 'Click to schedule' : serviceDays < 0 ? <span className="font-medium text-red-600">{-serviceDays} days overdue</span> : `in ${serviceDays} days`,
           },
-          { label: 'Capacity', value: s?.cubicCapacity ? `${s.cubicCapacity} m³` : '—', sub: s?.doorAccess || 'Door access not set' },
+          { label: 'Capacity', value: formatCapacity(s) ?? '—', sub: s?.doorAccess || 'Door access not set' },
           { label: 'Data logger', value: unit.dataLoggerId ? 'Connected' : 'None', sub: unit.dataLoggerId ? <span className="font-mono">{unit.dataLoggerId}</span> : 'Not configured' },
         ]}
       />
@@ -323,7 +330,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
               <DetailList cols={2}>
                 <DetailItem label="External dimensions (L × W × H)">{dims(s.externalDimensions) ?? <span className="text-muted-foreground">Not specified</span>}</DetailItem>
                 <DetailItem label="Internal dimensions (L × W × H)">{dims(s.internalDimensions) ?? <span className="text-muted-foreground">Not specified</span>}</DetailItem>
-                <DetailItem label="Cubic capacity">{s.cubicCapacity ? `${s.cubicCapacity} m³` : <span className="text-muted-foreground">Not specified</span>}</DetailItem>
+                <DetailItem label="Capacity">{formatCapacity(s) ?? <span className="text-muted-foreground">Not specified</span>}</DetailItem>
                 <DetailItem label="Door access">{s.doorAccess || <span className="text-muted-foreground">Not specified</span>}</DetailItem>
                 <DetailItem label="Chassis number">
                   {s.chassisNumber ? <span className="font-mono">{s.chassisNumber}</span> : <span className="text-muted-foreground">Not specified</span>}
@@ -678,8 +685,15 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
               </div>
             ))}
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Cubic capacity (m³)">
-                <Input type="number" step="0.1" value={specsForm.cubicCapacity} onChange={(e) => setSpecsForm((p) => ({ ...p, cubicCapacity: e.target.value }))} className="h-9" />
+              <Field label="Capacity">
+                <div className="grid grid-cols-[1fr_104px] gap-2">
+                  <Input type="number" step="0.1" value={specsForm.cubicCapacity} onChange={(e) => setSpecsForm((p) => ({ ...p, cubicCapacity: e.target.value }))} className="h-9" />
+                  <select value={specsForm.capacityUnit} onChange={(e) => setSpecsForm((p) => ({ ...p, capacityUnit: e.target.value as CapacityUnit }))} className={selectClass}>
+                    <option value="M3">m³</option>
+                    <option value="M2">m²</option>
+                    <option value="L">Litres</option>
+                  </select>
+                </div>
               </Field>
               <Field label="Door access">
                 <Input value={specsForm.doorAccess} onChange={(e) => setSpecsForm((p) => ({ ...p, doorAccess: e.target.value }))} placeholder="e.g. Rear doors" className="h-9" />

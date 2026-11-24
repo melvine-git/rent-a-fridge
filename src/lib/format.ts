@@ -1,3 +1,5 @@
+import type { CapacityUnit } from '@/types';
+
 const DAY_MS = 86_400_000;
 
 function toDate(value: string | Date): Date {
@@ -104,6 +106,16 @@ export function formatAddress(a: { line1: string; line2?: string; town?: string;
     .map((p) => p?.trim())
     .filter(Boolean)
     .join(', ');
+}
+
+const CAPACITY_UNIT_LABELS: Record<CapacityUnit, string> = { M2: 'm²', M3: 'm³', L: 'L' };
+
+/** "12 m³", "450 L" — older rows without a unit treat values under 1 as litres. */
+export function formatCapacity(specs?: { cubicCapacity?: number; capacityUnit?: CapacityUnit }): string | undefined {
+  const c = specs?.cubicCapacity;
+  if (c == null) return undefined;
+  if (specs?.capacityUnit) return `${c} ${CAPACITY_UNIT_LABELS[specs.capacityUnit]}`;
+  return c < 1 ? `${Math.round(c * 1000)} L` : `${c} m³`;
 }
 
 export function formatFileSize(bytes: number): string {

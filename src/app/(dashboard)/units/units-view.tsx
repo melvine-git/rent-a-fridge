@@ -41,7 +41,7 @@ import { toast } from 'sonner';
 import { addUnit } from '@/lib/actions';
 import { cn } from '@/lib/utils';
 import { UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, unitDisplayStatus, type UnitDisplayStatus } from '@/lib/domain';
-import { daysBetween, daysFromToday, formatDate } from '@/lib/format';
+import { daysBetween, daysFromToday, formatCapacity, formatDate } from '@/lib/format';
 import type { UnitType, UnitSize, UnitWithHire } from '@/types';
 
 interface UnitsViewProps {
@@ -71,9 +71,7 @@ const serviceOverdue = (u: UnitWithHire) => (u.serviceDue ? Math.max(0, -daysFro
 const hasIssue = (u: UnitWithHire) => !!u.breakdown || overdueDays(u) > 0 || serviceOverdue(u) > 0;
 
 function capacity(u: UnitWithHire) {
-  const c = u.specifications?.cubicCapacity;
-  if (!c) return undefined;
-  return c < 1 ? `${Math.round(c * 1000)} L` : `${c} m³`;
+  return formatCapacity(u.specifications);
 }
 function dimensions(u: UnitWithHire) {
   const d = u.specifications?.externalDimensions;
