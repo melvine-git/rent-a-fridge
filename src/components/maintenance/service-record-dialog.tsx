@@ -120,8 +120,9 @@ export function ServiceRecordDialog({ open, onOpenChange, onSaved, units, unitId
   };
 
   const removeExisting = async (a: Attachment) => {
-    if (!record || !unitId) return;
-    const r = await removeMaintenanceAttachment(unitId, record.id, a.url);
+    // The record still lives on the unit it was opened on, even if Unit is being changed to move it
+    if (!record || !fixedUnitId) return;
+    const r = await removeMaintenanceAttachment(fixedUnitId, record.id, a.url);
     if (r.success) setExisting((p) => p.filter((x) => x.url !== a.url));
     else toast.error('Could not remove file', { description: r.error });
   };
@@ -165,7 +166,7 @@ export function ServiceRecordDialog({ open, onOpenChange, onSaved, units, unitId
         </DialogHeader>
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-3">
-            {!fixedUnitId && units && (
+            {units && (
               <Field label="Unit" required>
                 <select value={unitId} onChange={(e) => setUnitId(e.target.value)} className={selectClass}>
                   <option value="">Select…</option>

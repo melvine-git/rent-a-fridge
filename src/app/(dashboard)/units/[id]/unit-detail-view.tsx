@@ -17,11 +17,11 @@ import { Field, selectClass, textareaClass } from '@/components/app/field';
 import { UnitTypeIcon } from '@/components/app/unit-type-icon';
 import { UnitPhotos } from './unit-photos';
 import { ServiceRecordDialog, AttachmentLinks } from '@/components/maintenance/service-record-dialog';
-import { updateUnit, updateUnitSpecifications, addBOMComponent, removeBOMComponent, setUnitStatus, setUnitBreakdown, setUnitNextService } from '@/lib/actions';
+import { updateUnit, updateUnitSpecifications, addBOMComponent, updateBOMComponent, removeBOMComponent, setUnitStatus, setUnitBreakdown, setUnitNextService, deleteUnit } from '@/lib/actions';
 import { COMPONENT_LABELS, GBP, RECORD_TYPE_META, STATUS_META, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, nextServiceDate, unitDisplayStatus } from '@/lib/domain';
-import { daysBetween, daysFromToday, formatDate } from '@/lib/format';
+import { daysBetween, daysFromToday, formatCapacity, formatDate, formatDimensions } from '@/lib/format';
 import { Activity, ArrowUpRight, CalendarClock, CalendarDays, Cpu, Pencil, Plus, Ruler, Trash2, TriangleAlert, Wrench } from 'lucide-react';
-import type { Unit, Booking, Customer, BOMComponent, MaintenanceRecord, UnitType, UnitSize, UnitStatus } from '@/types';
+import type { Unit, Booking, Customer, BOMComponent, CapacityUnit, DimensionUnit, MaintenanceRecord, UnitType, UnitSize, UnitStatus } from '@/types';
 
 type BookingWithCustomer = Booking & { customer: Customer };
 
@@ -29,24 +29,26 @@ interface Props {
   unit: Unit;
   bookingHistory: BookingWithCustomer[];
   currentBooking: BookingWithCustomer | null;
+  allUnits: Unit[];
 }
 
 export type UnitTab = 'overview' | 'bom' | 'bookings' | 'maintenance';
 type Tab = UnitTab;
 
-const dims = (d?: { length: number; width: number; height: number }) =>
-  d ? `${d.length.toLocaleString()} × ${d.width.toLocaleString()} × ${d.height.toLocaleString()} mm` : undefined;
 
-export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTab }: Props & { initialTab?: UnitTab }) {
+
+export function UnitDetailView({ unit, bookingHistory, currentBooking, allUnits, initialTab }: Props & { initialTab?: UnitTab }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>(initialTab ?? 'overview');
   const [isEditing, setIsEditing] = useState(false);
   const [showSpecsEdit, setShowSpecsEdit] = useState(false);
   const [showAddBOM, setShowAddBOM] = useState(false);
+  const [editingBOM, setEditingBOM] = useState<BOMComponent | null>(null);
   const [serviceDialog, setServiceDialog] = useState<{ key: number; record?: MaintenanceRecord } | null>(null);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [breakdownNotes, setBreakdownNotes] = useState('');
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState('');
 
   const [editForm, setEditForm] = useState({
@@ -56,18 +58,43 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
     dataLoggerId: unit.dataLoggerId || '',
   });
   const s = unit.specifications;
+  // Rows saved before units existed are millimetres — open the form in centimetres
+  const dimInput = (v?: number) => (v == null ? '' : String(s?.dimensionUnit ? v : v / 10));
   const [specsForm, setSpecsForm] = useState({
-    extLength: s?.externalDimensions?.length?.toString() || '',
-    extWidth: s?.externalDimensions?.width?.toString() || '',
-    extHeight: s?.externalDimensions?.height?.toString() || '',
-    intLength: s?.internalDimensions?.length?.toString() || '',
-    intWidth: s?.internalDimensions?.width?.toString() || '',
-    intHeight: s?.internalDimensions?.height?.toString() || '',
+    extLength: dimInput(s?.externalDimensions?.length),
+    extWidth: dimInput(s?.externalDimensions?.width),
+    extHeight: dimInput(s?.externalDimensions?.height),
+    intLength: dimInput(s?.internalDimensions?.length),
+    intWidth: dimInput(s?.internalDimensions?.width),
+    intHeight: dimInput(s?.internalDimensions?.height),
+    dimensionUnit: s?.dimensionUnit ?? ('CM' as DimensionUnit),
     cubicCapacity: s?.cubicCapacity?.toString() || '',
+    capacityUnit: s?.capacityUnit ?? ((s?.cubicCapacity ?? 1) < 1 ? 'L' : 'M3'),
     doorAccess: s?.doorAccess || '',
     chassisNumber: s?.chassisNumber || '',
   });
-  const [bomForm, setBomForm] = useState({ type: 'OTHER' as BOMComponent['type'], name: '', manufacturer: '', model: '', serialNumber: '', installedDate: '' });
+  const emptyBomForm = { type: 'OTHER' as BOMComponent['type'], name: '', manufacturer: '', model: '', serialNumber: '', installedDate: '', warrantyExpiry: '', refrigerantCharge: '', notes: '' };
+  const [bomForm, setBomForm] = useState(emptyBomForm);
+  const openAddBOM = () => {
+    setEditingBOM(null);
+    setBomForm(emptyBomForm);
+    setShowAddBOM(true);
+  };
+  const openEditBOM = (c: BOMComponent) => {
+    setEditingBOM(c);
+    setBomForm({
+      type: c.type,
+      name: c.name,
+      manufacturer: c.manufacturer ?? '',
+      model: c.model ?? '',
+      serialNumber: c.serialNumber ?? '',
+      installedDate: c.installedDate ?? '',
+      warrantyExpiry: c.warrantyExpiry ?? '',
+      refrigerantCharge: c.refrigerantCharge ?? '',
+      notes: c.notes ?? '',
+    });
+    setShowAddBOM(true);
+  };
   const done = (msg: string) => {
     toast.success(msg);
     router.refresh();
@@ -83,11 +110,13 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
   };
 
   const handleSaveSpecs = async () => {
-    const n = (v: string) => (v ? parseInt(v) : 0);
+    const n = (v: string) => (v ? parseFloat(v) : 0);
     const r = await updateUnitSpecifications(unit.id, {
       externalDimensions: specsForm.extLength ? { length: n(specsForm.extLength), width: n(specsForm.extWidth), height: n(specsForm.extHeight) } : undefined,
       internalDimensions: specsForm.intLength ? { length: n(specsForm.intLength), width: n(specsForm.intWidth), height: n(specsForm.intHeight) } : undefined,
+      dimensionUnit: specsForm.extLength || specsForm.intLength ? specsForm.dimensionUnit : undefined,
       cubicCapacity: specsForm.cubicCapacity ? parseFloat(specsForm.cubicCapacity) : undefined,
+      capacityUnit: specsForm.cubicCapacity ? (specsForm.capacityUnit as CapacityUnit) : undefined,
       doorAccess: specsForm.doorAccess || undefined,
       chassisNumber: specsForm.chassisNumber || undefined,
     });
@@ -97,17 +126,22 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
     } else failed(r);
   };
 
-  const handleAddBOM = async () => {
+  const handleSaveBOM = async () => {
     if (!bomForm.name.trim()) {
       toast.error('Enter a component name');
       return;
     }
     const clean = Object.fromEntries(Object.entries(bomForm).map(([k, v]) => [k, v.trim() || undefined])) as typeof bomForm;
-    const r = await addBOMComponent(unit.id, { ...clean, type: bomForm.type, name: bomForm.name.trim() }).catch(() => ({ success: false, error: 'Connection problem, please try again' }));
+    const payload = { ...clean, type: bomForm.type, name: bomForm.name.trim(), refrigerantCharge: bomForm.type === 'REFRIGERANT' ? clean.refrigerantCharge : undefined };
+    const r = await (editingBOM
+      ? updateBOMComponent(unit.id, editingBOM.id, payload)
+      : addBOMComponent(unit.id, payload)
+    ).catch(() => ({ success: false, error: 'Connection problem, please try again' }));
     if (r.success) {
       setShowAddBOM(false);
-      setBomForm({ type: 'OTHER', name: '', manufacturer: '', model: '', serialNumber: '', installedDate: '' });
-      done('Component added');
+      setEditingBOM(null);
+      setBomForm(emptyBomForm);
+      done(editingBOM ? 'Component updated' : 'Component added');
     } else failed(r);
   };
 
@@ -117,7 +151,21 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
     else failed(r);
   };
 
-  const handleSetStatus = async (status: UnitStatus) => {
+  const handleStatusChange = async (value: string) => {
+    if (value === 'BREAKDOWN') {
+      setBreakdownNotes(unit.breakdown?.notes ?? '');
+      setBreakdownOpen(true);
+      return;
+    }
+    const status = value as UnitStatus;
+    // Choosing a real status while broken down implies the unit is back in service
+    if (unit.breakdown) {
+      const fix = await setUnitBreakdown(unit.id, null);
+      if (!fix.success) {
+        failed(fix);
+        return;
+      }
+    }
     const r = await setUnitStatus(unit.id, status);
     if (r.success) done(`Status set to ${STATUS_META[status].label.toLowerCase()}`);
     else failed(r);
@@ -137,6 +185,18 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
       setScheduleOpen(false);
       done(date ? `Next service set for ${formatDate(date, { year: true })}` : 'Scheduled service cleared');
     } else failed(r);
+  };
+
+  const handleDeleteUnit = async () => {
+    const r = await deleteUnit(unit.id);
+    if (r.success) {
+      toast.success(`${unit.id} deleted`);
+      router.push('/units');
+      router.refresh();
+    } else {
+      setDeleteOpen(false);
+      failed(r);
+    }
   };
 
   const history = unit.maintenanceHistory ?? [];
@@ -159,8 +219,8 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
         actions={
           <>
             <select
-              value={unit.status}
-              onChange={(e) => handleSetStatus(e.target.value as UnitStatus)}
+              value={unit.breakdown ? 'BREAKDOWN' : unit.status}
+              onChange={(e) => handleStatusChange(e.target.value)}
               className={`${selectClass.replace('w-full', 'w-auto')} font-medium`}
               aria-label="Change status"
             >
@@ -169,28 +229,22 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
                 On hire
               </option>
               <option value="MAINTENANCE">In maintenance</option>
+              <option value="BREAKDOWN" className="text-red-700">
+                Broken down
+              </option>
             </select>
-            {!unit.breakdown && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setBreakdownNotes('');
-                  setBreakdownOpen(true);
-                }}
-                className="h-9 gap-1.5 px-3 text-red-700 hover:bg-red-50"
-              >
-                <TriangleAlert /> Breakdown
-              </Button>
-            )}
             <Button variant="outline" onClick={() => setIsEditing(true)} className="h-9 gap-1.5 px-3">
               <Pencil /> Edit
+            </Button>
+            <Button variant="outline" onClick={() => setDeleteOpen(true)} className="h-9 gap-1.5 px-3 text-red-700 hover:bg-red-50">
+              <Trash2 /> Delete
             </Button>
           </>
         }
       />
 
       {unit.breakdown && (
-        <div className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-red-200 bg-red-50/70 px-4 py-3 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50/70 px-4 py-3 sm:flex-row sm:items-center">
           <TriangleAlert className="size-5 shrink-0 text-red-600" />
           <div className="min-w-0 flex-1 text-sm">
             <div className="font-semibold text-red-900">
@@ -212,7 +266,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
       {currentBooking && (
         <Link
           href={`/bookings/${currentBooking.id}`}
-          className="group flex items-center gap-4 rounded-[var(--radius-lg)] border border-sky-200 bg-sky-50/60 px-4 py-3 hover:bg-sky-50"
+          className="group flex items-center gap-4 rounded-lg border border-sky-200 bg-sky-50/60 px-4 py-3 hover:bg-sky-50"
         >
           <span className="size-2 rounded-full bg-sky-500" />
           <div className="min-w-0 flex-1 text-sm">
@@ -250,7 +304,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
             sub:
               serviceDays === undefined ? 'Click to schedule' : serviceDays < 0 ? <span className="font-medium text-red-600">{-serviceDays} days overdue</span> : `in ${serviceDays} days`,
           },
-          { label: 'Capacity', value: s?.cubicCapacity ? `${s.cubicCapacity} m³` : '—', sub: s?.doorAccess || 'Door access not set' },
+          { label: 'Capacity', value: formatCapacity(s) ?? '—', sub: s?.doorAccess || 'Door access not set' },
           { label: 'Data logger', value: unit.dataLoggerId ? 'Connected' : 'None', sub: unit.dataLoggerId ? <span className="font-mono">{unit.dataLoggerId}</span> : 'Not configured' },
         ]}
       />
@@ -279,9 +333,9 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
           >
             {s ? (
               <DetailList cols={2}>
-                <DetailItem label="External dimensions (L × W × H)">{dims(s.externalDimensions) ?? <span className="text-muted-foreground">Not specified</span>}</DetailItem>
-                <DetailItem label="Internal dimensions (L × W × H)">{dims(s.internalDimensions) ?? <span className="text-muted-foreground">Not specified</span>}</DetailItem>
-                <DetailItem label="Cubic capacity">{s.cubicCapacity ? `${s.cubicCapacity} m³` : <span className="text-muted-foreground">Not specified</span>}</DetailItem>
+                <DetailItem label="External dimensions (L × W × H)">{formatDimensions(s.externalDimensions, s.dimensionUnit) ?? <span className="text-muted-foreground">Not specified</span>}</DetailItem>
+                <DetailItem label="Internal dimensions (L × W × H)">{formatDimensions(s.internalDimensions, s.dimensionUnit) ?? <span className="text-muted-foreground">Not specified</span>}</DetailItem>
+                <DetailItem label="Capacity">{formatCapacity(s) ?? <span className="text-muted-foreground">Not specified</span>}</DetailItem>
                 <DetailItem label="Door access">{s.doorAccess || <span className="text-muted-foreground">Not specified</span>}</DetailItem>
                 <DetailItem label="Chassis number">
                   {s.chassisNumber ? <span className="font-mono">{s.chassisNumber}</span> : <span className="text-muted-foreground">Not specified</span>}
@@ -321,7 +375,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
         <Panel
           title="Bill of materials"
           action={
-            <Button variant="outline" size="sm" onClick={() => setShowAddBOM(true)} className="h-8 gap-1 px-2.5 text-xs">
+            <Button variant="outline" size="sm" onClick={openAddBOM} className="h-8 gap-1 px-2.5 text-xs">
               <Plus /> Add component
             </Button>
           }
@@ -343,15 +397,24 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
                     <tr key={c.id} className="group">
                       <td className="px-4 py-3">
                         <div className="font-medium text-foreground">{c.name}</div>
-                        <div className="text-xs text-muted-foreground">{COMPONENT_LABELS[c.type]}</div>
+                        <div className="text-xs text-muted-foreground">{COMPONENT_LABELS[c.type]}{c.refrigerantCharge ? ` · ${c.refrigerantCharge}` : ''}</div>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{[c.manufacturer, c.model].filter(Boolean).join(' · ') || '—'}</td>
                       <td className="hidden px-4 py-3 font-mono text-xs text-muted-foreground md:table-cell">{c.serialNumber || '—'}</td>
                       <td className="tabular hidden px-4 py-3 text-muted-foreground md:table-cell">{formatDate(c.installedDate, { year: true })}</td>
-                      <td className="pr-3 text-right">
+                      <td className="pr-3 flex items-center gap-2 justify-center mt-3">
+                        <button
+                          onClick={() => openEditBOM(c)}
+                          className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground opacity-60 hover:bg-muted
+                            hover:text-foreground group-hover:opacity-100"
+                          aria-label={`Edit ${c.name}`}
+                        >
+                          <Pencil className="size-4" />
+                        </button>
                         <button
                           onClick={() => handleRemoveBOM(c.id)}
-                          className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground opacity-60 hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+                          className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground opacity-60 hover:bg-red-50
+                            hover:text-red-600 group-hover:opacity-100"
                           aria-label={`Remove ${c.name}`}
                         >
                           <Trash2 className="size-4" />
@@ -392,7 +455,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
                         {formatDate(b.startDate)} – {formatDate(b.endDate)}
                         <div className="text-xs text-muted-foreground">{daysBetween(b.startDate, b.endDate)} days</div>
                       </td>
-                      <td className="hidden max-w-[260px] truncate px-4 py-3 text-muted-foreground md:table-cell">{b.deliveryAddress}</td>
+                      <td className="hidden max-w-65 truncate px-4 py-3 text-muted-foreground md:table-cell">{b.deliveryAddress}</td>
                       <td className="px-4 py-3">
                         <StatusBadge status={b.status} />
                       </td>
@@ -483,56 +546,134 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
       )}
 
       {/* Edit unit */}
-      <Dialog open={isEditing} onOpenChange={setIsEditing}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Edit {unit.id}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Field label="Unit type">
-              <select value={editForm.unitType} onChange={(e) => setEditForm((p) => ({ ...p, unitType: e.target.value as UnitType }))} className={selectClass}>
-                {(Object.keys(UNIT_TYPE_LABELS) as UnitType[]).map((t) => (
-                  <option key={t} value={t}>
-                    {UNIT_TYPE_LABELS[t]}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Size">
-              <select value={editForm.size} onChange={(e) => setEditForm((p) => ({ ...p, size: e.target.value as UnitSize }))} className={selectClass}>
-                {(Object.keys(UNIT_SIZE_LABELS) as UnitSize[]).map((v) => (
-                  <option key={v} value={v}>
-                    {UNIT_SIZE_LABELS[v]}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Data logger ID" hint="The device ID from your data logger software">
-              <Input value={editForm.dataLoggerId} onChange={(e) => setEditForm((p) => ({ ...p, dataLoggerId: e.target.value }))} placeholder="e.g. DL-2041" className="h-9 font-mono" />
-            </Field>
-            <Field label="Notes">
-              <textarea value={editForm.notes} onChange={(e) => setEditForm((p) => ({ ...p, notes: e.target.value }))} className={textareaClass} />
-            </Field>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditing(false)} className="h-9 px-4">
-              Cancel
-            </Button>
-            <Button onClick={handleSaveEdit} className="h-9 px-4 hover:bg-[var(--brand-red-dark)]">
-              Save changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+     
+<Dialog open={isEditing} onOpenChange={setIsEditing}>
+  <DialogContent className="sm:max-w-120 overflow-hidden rounded-2xl border border-gray-200 bg-white p-0 shadow-2xl">
+    <DialogHeader className="border-b border-gray-100 bg-gray-50/80 px-6 py-5">
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-(--brand-red)">
+          <Pencil className="h-5 w-5" />
+        </div>
+
+        <div className="space-y-1">
+          <DialogTitle className="text-base font-semibold text-gray-900">
+            Edit unit
+          </DialogTitle>
+          <p className="text-xs text-gray-500">
+            Update the configuration and details for{" "}
+            <span className="font-medium text-gray-700">{unit.id}</span>
+          </p>
+        </div>
+      </div>
+    </DialogHeader>
+
+    <div className="space-y-5 px-6 py-6">
+      <Field label="Unit type">
+        <select
+          value={editForm.unitType}
+          onChange={(e) =>
+            setEditForm((p) => ({
+              ...p,
+              unitType: e.target.value as UnitType,
+            }))
+          }
+          className={`${selectClass} h-10 rounded-lg border-gray-200 bg-gray-50/50 text-sm transition focus:border-(--brand-red) focus:bg-white focus:ring-2 focus:ring-(--brand-red)/10`}
+        >
+          {(Object.keys(UNIT_TYPE_LABELS) as UnitType[]).map((t) => (
+            <option key={t} value={t}>
+              {UNIT_TYPE_LABELS[t]}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <Field label="Size">
+        <select
+          value={editForm.size}
+          onChange={(e) =>
+            setEditForm((p) => ({
+              ...p,
+              size: e.target.value as UnitSize,
+            }))
+          }
+          className={`${selectClass} h-10 rounded-lg border-gray-200 bg-gray-50/50 text-sm transition focus:border-(--brand-red) focus:bg-white focus:ring-2 focus:ring-(--brand-red)/10`}
+        >
+          {(Object.keys(UNIT_SIZE_LABELS) as UnitSize[]).map((v) => (
+            <option key={v} value={v}>
+              {UNIT_SIZE_LABELS[v]}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <Field
+        label="Data logger ID"
+        hint="The unique device ID from your data logger software."
+      >
+        <Input
+          value={editForm.dataLoggerId}
+          onChange={(e) =>
+            setEditForm((p) => ({
+              ...p,
+              dataLoggerId: e.target.value,
+            }))
+          }
+          placeholder="e.g. DL-2041"
+          className="h-10 rounded-lg border-gray-200 bg-gray-50/50 font-mono text-sm transition placeholder:font-sans focus:border-(--brand-red) focus:bg-white focus:ring-2 focus:ring-(--brand-red)/10"
+        />
+      </Field>
+
+      <Field label="Notes" hint="Add any additional information about this unit.">
+        <textarea
+          value={editForm.notes}
+          onChange={(e) =>
+            setEditForm((p) => ({
+              ...p,
+              notes: e.target.value,
+            }))
+          }
+          placeholder="Enter notes here..."
+          rows={4}
+          className={`${textareaClass} min-h-25 rounded-lg border-gray-200 bg-gray-50/50 text-sm transition placeholder:text-gray-400 focus:border-(--brand-red) focus:bg-white focus:ring-2 focus:ring-(--brand-red)/10`}
+        />
+      </Field>
+    </div>
+
+    <DialogFooter className="flex-row justify-end gap-2 border-t border-gray-100 bg-gray-50/70 px-6 py-4">
+      <Button
+        variant="outline"
+        onClick={() => setIsEditing(false)}
+        className="h-9 rounded-lg border-gray-200 bg-white px-4 text-sm font-medium hover:bg-gray-100"
+      >
+        Cancel
+      </Button>
+
+      <Button
+        onClick={handleSaveEdit}
+        className="h-9 rounded-lg bg-(--brand-red) px-5 text-sm font-medium text-white shadow-sm transition hover:bg-(--brand-red-dark)"
+      >
+        Save changes
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
 
       {/* Specs */}
       <Dialog open={showSpecsEdit} onOpenChange={setShowSpecsEdit}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Specifications</DialogTitle>
-            <DialogDescription>Dimensions in millimetres.</DialogDescription>
+            <DialogDescription>Dimensions in centimetres or metres.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[13px] font-medium text-foreground">Dimensions</span>
+              <select value={specsForm.dimensionUnit} onChange={(e) => setSpecsForm((p) => ({ ...p, dimensionUnit: e.target.value as DimensionUnit }))} className={selectClass}>
+                <option value="CM">centimetres (cm)</option>
+                <option value="M">metres (m)</option>
+              </select>
+            </div>
             {(
               [
                 ['External (L × W × H)', 'extLength', 'extWidth', 'extHeight'],
@@ -546,6 +687,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
                     <Input
                       key={k}
                       type="number"
+                      step="any"
                       placeholder={['Length', 'Width', 'Height'][i]}
                       value={specsForm[k]}
                       onChange={(e) => setSpecsForm((p) => ({ ...p, [k]: e.target.value }))}
@@ -556,8 +698,15 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
               </div>
             ))}
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Cubic capacity (m³)">
-                <Input type="number" step="0.1" value={specsForm.cubicCapacity} onChange={(e) => setSpecsForm((p) => ({ ...p, cubicCapacity: e.target.value }))} className="h-9" />
+              <Field label="Capacity">
+                <div className="grid grid-cols-[1fr_104px] gap-2">
+                  <Input type="number" step="0.1" value={specsForm.cubicCapacity} onChange={(e) => setSpecsForm((p) => ({ ...p, cubicCapacity: e.target.value }))} className="h-9" />
+                  <select value={specsForm.capacityUnit} onChange={(e) => setSpecsForm((p) => ({ ...p, capacityUnit: e.target.value as CapacityUnit }))} className={selectClass}>
+                    <option value="M3">m³</option>
+                    <option value="M2">m²</option>
+                    <option value="L">Litres</option>
+                  </select>
+                </div>
               </Field>
               <Field label="Door access">
                 <Input value={specsForm.doorAccess} onChange={(e) => setSpecsForm((p) => ({ ...p, doorAccess: e.target.value }))} placeholder="e.g. Rear doors" className="h-9" />
@@ -571,7 +720,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
             <Button variant="outline" onClick={() => setShowSpecsEdit(false)} className="h-9 px-4">
               Cancel
             </Button>
-            <Button onClick={handleSaveSpecs} className="h-9 px-4 hover:bg-[var(--brand-red-dark)]">
+            <Button onClick={handleSaveSpecs} className="h-9 px-4 hover:bg-(--brand-red-dark)">
               Save specifications
             </Button>
           </DialogFooter>
@@ -582,7 +731,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
       <Dialog open={showAddBOM} onOpenChange={setShowAddBOM}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Add component</DialogTitle>
+            <DialogTitle className="text-base font-semibold">{editingBOM ? 'Edit component' : 'Add component'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
@@ -610,14 +759,45 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
               <Field label="Installed">
                 <Input type="date" value={bomForm.installedDate} onChange={(e) => setBomForm((p) => ({ ...p, installedDate: e.target.value }))} className="h-9" />
               </Field>
+              <Field label="Warranty expiry">
+                <Input type="date" value={bomForm.warrantyExpiry} onChange={(e) => setBomForm((p) => ({ ...p, warrantyExpiry: e.target.value }))} className="h-9" />
+              </Field>
+              {bomForm.type === 'REFRIGERANT' && (
+                <Field label="Charge">
+                  <Input value={bomForm.refrigerantCharge} onChange={(e) => setBomForm((p) => ({ ...p, refrigerantCharge: e.target.value }))} placeholder="e.g. 80g" className="h-9" />
+                </Field>
+              )}
             </div>
+            <Field label="Notes">
+              <textarea value={bomForm.notes} onChange={(e) => setBomForm((p) => ({ ...p, notes: e.target.value }))} className={textareaClass} />
+            </Field>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddBOM(false)} className="h-9 px-4">
               Cancel
             </Button>
-            <Button onClick={handleAddBOM} className="h-9 px-4 hover:bg-[var(--brand-red-dark)]">
-              Add component
+            <Button onClick={handleSaveBOM} className="h-9 px-4 hover:bg-(--brand-red-dark)">
+              {editingBOM ? 'Save changes' : 'Add component'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete unit */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold">Delete {unit.id}?</DialogTitle>
+            <DialogDescription>
+              This permanently removes the unit, its specifications, components and service history. Units with bookings cannot be deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} className="h-9 px-4">
+              Cancel
+            </Button>
+            <Button onClick={handleDeleteUnit} className="h-9 bg-red-600 px-4 hover:bg-red-700">
+              Delete unit
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -629,6 +809,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
           key={serviceDialog.key}
           open
           onOpenChange={(o) => !o && setServiceDialog(null)}
+          units={allUnits}
           unitId={unit.id}
           record={serviceDialog.record}
           onSaved={() => {
@@ -684,7 +865,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
             <Button variant="outline" onClick={() => setScheduleOpen(false)} className="h-9 px-4">
               Cancel
             </Button>
-            <Button onClick={() => saveSchedule(scheduleDate)} disabled={!scheduleDate} className="h-9 px-4 hover:bg-[var(--brand-red-dark)]">
+            <Button onClick={() => saveSchedule(scheduleDate)} disabled={!scheduleDate} className="h-9 px-4 hover:bg-(--brand-red-dark)">
               Save date
             </Button>
           </DialogFooter>

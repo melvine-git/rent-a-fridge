@@ -1,3 +1,5 @@
+import type { CapacityUnit, DimensionUnit, UnitDimensions } from '@/types';
+
 const DAY_MS = 86_400_000;
 
 function toDate(value: string | Date): Date {
@@ -104,6 +106,26 @@ export function formatAddress(a: { line1: string; line2?: string; town?: string;
     .map((p) => p?.trim())
     .filter(Boolean)
     .join(', ');
+}
+
+const CAPACITY_UNIT_LABELS: Record<CapacityUnit, string> = { M2: 'm²', M3: 'm³', L: 'L' };
+
+/** "12 m³", "450 L" — older rows without a unit treat values under 1 as litres. */
+export function formatCapacity(specs?: { cubicCapacity?: number; capacityUnit?: CapacityUnit }): string | undefined {
+  const c = specs?.cubicCapacity;
+  if (c == null) return undefined;
+  if (specs?.capacityUnit) return `${c} ${CAPACITY_UNIT_LABELS[specs.capacityUnit]}`;
+  return c < 1 ? `${Math.round(c * 1000)} L` : `${c} m³`;
+}
+
+const DIMENSION_UNIT_LABELS: Record<DimensionUnit, string> = { M: 'm', CM: 'cm' };
+
+/** "2.35 × 1.8 × 1.9 m" — renders the stored values exactly, never rounded. */
+export function formatDimensions(d?: UnitDimensions, unit?: DimensionUnit): string | undefined {
+  if (!d) return undefined;
+  // Older rows stored millimetres without a unit — show exact metres
+  if (!unit) return `${d.length / 1000} × ${d.width / 1000} × ${d.height / 1000} m`;
+  return `${d.length} × ${d.width} × ${d.height} ${DIMENSION_UNIT_LABELS[unit]}`;
 }
 
 export function formatFileSize(bytes: number): string {

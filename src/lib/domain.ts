@@ -6,6 +6,10 @@ export const COMPONENT_LABELS: Record<BOMComponent['type'], string> = {
   CONTROLLER: 'Controller',
   FAN_MOTOR: 'Fan motor',
   CONTACTOR: 'Contactor',
+  REFRIGERANT: 'Refrigerant',
+  PACKAGED_UNIT: 'Packaged unit',
+  LIGHTS: 'Lights',
+  ACCESSORY: 'Accessory',
   OTHER: 'Other',
 };
 
@@ -21,6 +25,7 @@ export const UNIT_TYPE_LABELS: Record<UnitType, string> = {
   COLD_STORE: 'Cold store',
   UPRIGHT_FRIDGE: 'Upright fridge',
   CHEST_FREEZER: 'Chest freezer',
+  STATIC: 'Static',
 };
 
 export const UNIT_SIZE_LABELS: Record<UnitSize, string> = {

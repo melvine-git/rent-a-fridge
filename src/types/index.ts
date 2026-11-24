@@ -6,7 +6,7 @@ export type UnitSize = 'SMALL' | 'MEDIUM' | 'LARGE';
 /** Site power supply. INDUSTRIAL is shown as 'Commando'; OTHER uses Booking.powerOther. */
 export type PowerType = 'STANDARD' | 'INDUSTRIAL' | 'OTHER';
 export type RatePeriod = 'DAY' | 'WEEK';
-export type UnitType = 'COLD_STORE' | 'UPRIGHT_FRIDGE' | 'CHEST_FREEZER';
+export type UnitType = 'COLD_STORE' | 'UPRIGHT_FRIDGE' | 'CHEST_FREEZER' | 'STATIC';
 export type CableLength = '5m' | '10m' | '15m' | '20m' | '25m' | '30m';
 export type CalendarView = 'week' | 'month';
 
@@ -49,21 +49,33 @@ export interface Customer {
   address: string; // Default/primary invoice address, formatted on one line
   invoiceAddress?: PostalAddress; // Structured invoice address (source of `address` when set)
   addresses?: CustomerAddress[]; // Additional delivery addresses
+  paymentTerms?: 'ADVANCE' | 'CREDIT'; // how this customer is expected to pay
+  // Named contact person at the customer
+  contactName?: string;
+  contactJobTitle?: string;
+  contactEmail?: string;
+  contactPhone?: string;
   preferences?: CustomerPreferences;
   xeroContactId?: string; // Link to Xero accounting
   createdAt: string; // YYYY-MM-DD
 }
 
+export type DimensionUnit = 'M' | 'CM';
+
 export interface UnitDimensions {
-  length: number; // mm
-  width: number; // mm
-  height: number; // mm
+  length: number; // in the spec's `dimensionUnit`
+  width: number;
+  height: number;
 }
+
+export type CapacityUnit = 'M2' | 'M3' | 'L';
 
 export interface UnitSpecifications {
   externalDimensions?: UnitDimensions;
   internalDimensions?: UnitDimensions;
-  cubicCapacity?: number; // cubic meters
+  cubicCapacity?: number; // capacity value, measured in `capacityUnit`
+  capacityUnit?: CapacityUnit; // absent on older rows = treated as m³
+  dimensionUnit?: DimensionUnit; // unit the dimensions were entered in; absent on older rows = mm
   doorAccess?: string; // e.g., "Rear doors", "Side access"
   chassisNumber?: string;
   photoUrls?: string[];
@@ -71,13 +83,14 @@ export interface UnitSpecifications {
 
 export interface BOMComponent {
   id: string;
-  type: 'COMPRESSOR' | 'EVAPORATOR' | 'CONTROLLER' | 'FAN_MOTOR' | 'CONTACTOR' | 'OTHER';
+  type: 'COMPRESSOR' | 'EVAPORATOR' | 'CONTROLLER' | 'FAN_MOTOR' | 'CONTACTOR' | 'REFRIGERANT' | 'PACKAGED_UNIT' | 'LIGHTS' | 'ACCESSORY' | 'OTHER';
   name: string;
   manufacturer?: string;
   model?: string;
   serialNumber?: string;
   installedDate?: string;
   warrantyExpiry?: string;
+  refrigerantCharge?: string; // e.g. "80g", only meaningful for REFRIGERANT
   notes?: string;
 }
 
@@ -183,6 +196,8 @@ export interface Booking {
   collectionDocketId?: string;
   emailSent?: boolean;
   smsSent?: boolean;
+  paymentStatus?: 'UNPAID' | 'PAID'; // informational only — dispatch is never blocked on it
+  paidAt?: string; // YYYY-MM-DD when paymentStatus became PAID
   cancelledAt?: string; // ISO timestamp
   cancellationReason?: string;
 }
@@ -230,6 +245,13 @@ export interface DeliveryDocket {
   status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED';
 }
 
+/** Persisted per-notification UI state, keyed by the derived notification id. */
+export interface NotificationState {
+  id: string;
+  read?: boolean;
+  dismissed?: boolean;
+}
+
 export interface Database {
   staff: Staff[];
   customers: Customer[];
@@ -237,6 +259,7 @@ export interface Database {
   bookings: Booking[];
   dockets: DeliveryDocket[];
   serviceableComponents?: ServiceableComponent[];
+  notifications?: NotificationState[];
 }
 
 // Input types for actions
@@ -311,6 +334,7 @@ export interface AppNotification {
   description: string;
   date: string;
   href: string;
+  read?: boolean;
 }
 
 export interface ShellData {

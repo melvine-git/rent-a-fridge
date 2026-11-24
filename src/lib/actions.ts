@@ -5,6 +5,7 @@ import { readDb, writeDb } from './db';
 import { saveImage, saveFile, deleteImage, IMAGE_TYPES, MAX_UPLOAD_BYTES, DOCUMENT_TYPES, MAX_DOCUMENT_BYTES } from './uploads';
 import { formatAddress } from './format';
 import { nextServiceDate, COMPONENT_LABELS, bookingGroupStatus, quoteTotals } from './domain';
+import { parseCsv, textToRows } from './import-parse';
 import type { LineJob } from './hire-steps';
 import type {
   Customer,
@@ -35,6 +36,7 @@ import type {
   BookingSharedInput,
   BookingLineInput,
   ServiceableComponent,
+  NotificationState,
   Database,
 } from '@/types';
 
@@ -381,6 +383,25 @@ export async function updateCustomerPreferences(
   
   // The form sends the complete set, so replace rather than merge (merging could never clear a field)
   customer.preferences = withoutCleared({ ...preferences });
+  await writeDb(db);
+  revalidatePath('/');
+  return { success: true };
+}
+
+export async function deleteCustomer(
+  customerId: string
+): Promise<{ success: boolean; error?: string }> {
+  const db = await readDb();
+  const index = db.customers.findIndex(c => c.id === customerId);
+
+  if (index === -1) {
+    return { success: false, error: 'Customer not found' };
+  }
+  if (db.bookings.some(b => b.customerId === customerId)) {
+    return { success: false, error: 'This customer has bookings, so it cannot be deleted' };
+  }
+
+  db.customers.splice(index, 1);
   await writeDb(db);
   revalidatePath('/');
   return { success: true };
@@ -1025,6 +1046,36 @@ export async function addUnit(data: {
   return { success: true, unit };
 }
 
+export async function deleteUnit(
+  unitId: string
+): Promise<{ success: boolean; error?: string }> {
+  const db = await readDb();
+  const index = db.units.findIndex(u => u.id === unitId);
+
+  if (index === -1) {
+    return { success: false, error: 'Unit not found' };
+  }
+  if (db.bookings.some(b => b.unitId === unitId)) {
+    return { success: false, error: 'This unit has bookings, so it cannot be deleted' };
+  }
+  if (db.dockets.some(d => d.unitId === unitId)) {
+    return { success: false, error: 'This unit has delivery dockets, so it cannot be deleted' };
+  }
+
+  const [unit] = db.units.splice(index, 1);
+
+  // Uploaded files under this unit go with it
+  const urls = [
+    ...(unit.specifications?.photoUrls ?? []),
+    ...(unit.maintenanceHistory ?? []).flatMap(r => (r.attachments ?? []).map(a => a.url)),
+  ];
+  await Promise.all(urls.map(deleteImage));
+
+  await writeDb(db);
+  revalidatePath('/');
+  return { success: true };
+}
+
 export async function updateUnitSpecifications(
   unitId: string,
   specifications: UnitSpecifications
@@ -1068,6 +1119,25 @@ export async function addBOMComponent(
   return { success: true, component: newComponent };
 }
 
+export async function updateBOMComponent(
+  unitId: string,
+  componentId: string,
+  updates: Omit<BOMComponent, 'id'>
+): Promise<{ success: boolean; component?: BOMComponent; error?: string }> {
+  const db = await readDb();
+  const unit = db.units.find(u => u.id === unitId);
+  const component = unit?.bom?.find(c => c.id === componentId);
+
+  if (!unit || !component) {
+    return { success: false, error: 'Unit or component not found' };
+  }
+
+  Object.assign(component, updates);
+  await writeDb(db);
+  revalidatePath('/');
+  return { success: true, component };
+}
+
 export async function removeBOMComponent(
   unitId: string,
   componentId: string
@@ -1108,8 +1178,16 @@ export async function saveMaintenanceRecord(
   const unit = db.units.find((u) => u.id === unitId);
   if (!unit) return { success: false, error: 'Unit not found' };
   unit.maintenanceHistory ??= [];
-  const existing = record.id ? unit.maintenanceHistory.find((r) => r.id === record.id) : undefined;
-  if (record.id && !existing) return { success: false, error: 'Service record not found' };
+  let existing = record.id ? unit.maintenanceHistory.find((r) => r.id === record.id) : undefined;
+  let moved = false;
+  if (record.id && !existing) {
+    // The record lives on another unit — the save is reassigning it (e.g. logged on the wrong unit)
+    const source = db.units.find((u) => u.maintenanceHistory?.some((r) => r.id === record.id));
+    const i = source?.maintenanceHistory?.findIndex((r) => r.id === record.id) ?? -1;
+    if (!source || i < 0) return { success: false, error: 'Service record not found' };
+    [existing] = source.maintenanceHistory!.splice(i, 1);
+    moved = true;
+  }
 
   const attachments = [...(existing?.attachments ?? [])];
   for (const f of uploads) {
@@ -1129,7 +1207,7 @@ export async function saveMaintenanceRecord(
     cost: existing?.cost,
     attachments,
   };
-  if (existing) Object.assign(existing, clean);
+  if (existing && !moved) Object.assign(existing, clean);
   else unit.maintenanceHistory.unshift(clean);
   // A service that sets its own next date replaces any manually scheduled one
   if (clean.nextServiceDate) unit.nextServiceDate = undefined;
@@ -1191,7 +1269,7 @@ const DEFAULT_SERVICEABLE_COMPONENTS: Omit<ServiceableComponent, 'id'>[] = [
   { type: 'CONTROLLER', name: 'Temperature controller', description: 'Digital temperature control unit', intervalMonths: 12 },
   { type: 'FAN_MOTOR', name: 'Fan motor', description: 'Evaporator and condenser fan motors', intervalMonths: 6 },
   { type: 'OTHER', name: 'Door seals', description: 'Rubber door gaskets and seals', intervalMonths: 12 },
-  { type: 'OTHER', name: 'Refrigerant', description: 'Refrigerant gas levels and pressure', intervalMonths: 12 },
+  { type: 'REFRIGERANT', name: 'Refrigerant', description: 'Refrigerant gas levels and pressure', intervalMonths: 12 },
   { type: 'OTHER', name: 'Electrical', description: 'Wiring, connections and safety switches', intervalMonths: 12 },
   { type: 'OTHER', name: 'Drainage', description: 'Condensate drain and tray', intervalMonths: 6 },
 ];
@@ -1370,6 +1448,8 @@ export interface BookingListItem {
   deliveryAddress: string;
   poNumber?: string;
   total: number | null;
+  /** Payment recorded on every line — informational only */
+  paid: boolean;
   /** Not delivered although the delivery date has passed */
   lateDelivery: boolean;
   /** On hire past the collection date */
@@ -1482,6 +1562,7 @@ export async function getBookingsList(): Promise<BookingListItem[]> {
         deliveryAddress: first.deliveryAddress,
         poNumber: first.quote?.poNumber,
         total: priced ? quoteTotals(lines, first.quote).total : null,
+        paid: lines.every((l) => l.paymentStatus === 'PAID'),
         lateDelivery: lines.some((l) => l.status === 'CONFIRMED' && l.startDate < todayStr),
         overdueCollection: lines.some((l) => l.status === 'ON_HIRE' && l.endDate < todayStr),
         lines: lines.map((l) => ({
@@ -1620,6 +1701,11 @@ export async function getShellData(): Promise<ShellData> {
   }
   notifications.sort((a, b) => a.date.localeCompare(b.date));
 
+  // Persisted UI state: dismissed items are hidden entirely, read ones shown dimmed
+  const stateById = new Map((db.notifications ?? []).map((s) => [s.id, s]));
+  const visible = notifications.filter((n) => !stateById.get(n.id)?.dismissed);
+  for (const n of visible) n.read = stateById.get(n.id)?.read;
+
   const groups = new Map<string, Booking[]>();
   for (const b of db.bookings) groups.set(groupIdOf(b), [...(groups.get(groupIdOf(b)) ?? []), b]);
 
@@ -1627,10 +1713,10 @@ export async function getShellData(): Promise<ShellData> {
     counts: {
       deliveriesToday: db.bookings.filter((b) => b.status === 'CONFIRMED' && b.startDate === todayStr).length,
       collectionsDue: db.bookings.filter((b) => b.status === 'ON_HIRE' && b.endDate <= todayStr).length,
-      actionsOverdue: notifications.filter((n) => n.kind === 'ACTION_OVERDUE').length,
-      serviceDue: notifications.filter((n) => n.kind === 'SERVICE_DUE' || n.kind === 'BREAKDOWN').length,
+      actionsOverdue: visible.filter((n) => n.kind === 'ACTION_OVERDUE').length,
+      serviceDue: visible.filter((n) => n.kind === 'SERVICE_DUE' || n.kind === 'BREAKDOWN').length,
     },
-    notifications,
+    notifications: visible,
     searchIndex: [
       ...db.customers.map((c) => ({
         type: 'customer' as const,
@@ -1819,7 +1905,7 @@ export async function getUnitDetail(id: string) {
     .filter((b) => b.customer)
     .sort((a, b) => b.startDate.localeCompare(a.startDate));
   const currentBooking = bookingHistory.find((b) => b.status === 'ON_HIRE') ?? null;
-  return { unit, bookingHistory, currentBooking };
+  return { unit, bookingHistory, currentBooking, allUnits: db.units };
 }
 
 export async function getCustomersWithStats(): Promise<CustomerWithStats[]> {
@@ -1875,4 +1961,199 @@ export async function getUnitsWithHire(): Promise<UnitWithHire[]> {
       };
     })
     .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+}
+
+// ============ NOTIFICATION STATE ============
+
+async function saveNotificationState(
+  id: string,
+  patch: Partial<NotificationState>
+): Promise<{ success: boolean; error?: string }> {
+  const db = await readDb();
+  const list = (db.notifications ??= []);
+  let state = list.find((s) => s.id === id);
+  if (!state) {
+    state = { id };
+    list.push(state);
+  }
+  Object.assign(state, patch);
+  await writeDb(db);
+  revalidatePath('/');
+  return { success: true };
+}
+
+export async function setNotificationRead(
+  id: string,
+  read: boolean
+): Promise<{ success: boolean; error?: string }> {
+  return saveNotificationState(id, { read });
+}
+
+/**
+ * Record that payment has been made (or un-mark it) on every line of the booking.
+ * Informational only — it never blocks or unblocks dispatch.
+ */
+export async function setBookingPaid(
+  reference: string,
+  paid: boolean
+): Promise<{ success: boolean; error?: string }> {
+  const db = await readDb();
+  const lines = db.bookings.filter((b) => groupIdOf(b) === reference);
+  if (!lines.length) return { success: false, error: 'Booking not found' };
+  for (const b of lines) {
+    b.paymentStatus = paid ? 'PAID' : 'UNPAID';
+    if (paid) b.paidAt = today();
+    else delete b.paidAt;
+  }
+  await writeDb(db);
+  revalidatePath('/');
+  return { success: true };
+}
+
+export async function dismissNotification(
+  id: string
+): Promise<{ success: boolean; error?: string }> {
+  return saveNotificationState(id, { dismissed: true });
+}
+
+// ============ IMPORTS (CSV / PDF) ============
+
+/** Read an uploaded .csv/.txt/.tsv/.psv file into a grid of cells for the import preview. */
+export async function parseImportFile(
+  formData: FormData
+): Promise<{ success: boolean; rows?: string[][]; error?: string }> {
+  const file = formData.get('file');
+  if (!(file instanceof File) || file.size === 0) return { success: false, error: 'Choose a file' };
+  if (file.size > 10 * 1024 * 1024) return { success: false, error: 'File must be under 10 MB' };
+  try {
+    const text = await file.text();
+    let rows = parseCsv(text);
+    // Space/tab-aligned .txt files yield one cell per line — split on wide gaps instead
+    if (rows.every((r) => r.length <= 1)) rows = textToRows(text);
+    if (!rows.length) return { success: false, error: 'No rows found in that file' };
+    return { success: true, rows };
+  } catch (e) {
+    return { success: false, error: `Could not read that file: ${e instanceof Error ? e.message : 'unknown error'}` };
+  }
+}
+
+export interface CustomerImportRow {
+  name: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+}
+
+export interface BookingImportRow {
+  customerName: string;
+  unitId: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string;
+  status?: BookingStatus;
+  contactName?: string;
+  contactPhone?: string;
+  address?: string;
+  rate?: number;
+  ratePeriod?: 'DAY' | 'WEEK';
+  notes?: string;
+}
+
+export interface ImportResult {
+  success: boolean;
+  imported: number;
+  createdCustomers?: number;
+  skipped: { name: string; reason: string }[];
+  error?: string;
+}
+
+/** Bulk-create customers; rows whose name already exists (case-insensitive) are skipped. */
+export async function importCustomers(rows: CustomerImportRow[]): Promise<ImportResult> {
+  const db = await readDb();
+  const known = new Map(db.customers.map((c) => [c.name.trim().toLowerCase(), c]));
+  const skipped: ImportResult['skipped'] = [];
+  let imported = 0;
+  for (const row of rows) {
+    const name = row.name?.trim();
+    if (!name) {
+      skipped.push({ name: row.name || '(blank)', reason: 'No name' });
+      continue;
+    }
+    if (known.has(name.toLowerCase())) {
+      skipped.push({ name, reason: 'Already exists' });
+      continue;
+    }
+    const customer: Customer = {
+      id: generateId('cust'),
+      name,
+      phone: row.phone?.trim() ?? '',
+      email: row.email?.trim() || undefined,
+      address: row.address?.trim() ?? '',
+      createdAt: today(),
+    };
+    db.customers.push(customer);
+    known.set(name.toLowerCase(), customer);
+    imported++;
+  }
+  await writeDb(db);
+  revalidatePath('/', 'layout');
+  return { success: true, imported, skipped };
+}
+
+const IMPORT_STATUSES: BookingStatus[] = ['CONFIRMED', 'ON_HIRE', 'COLLECTED', 'CANCELLED'];
+
+/**
+ * Bulk-create past bookings. Customers are matched by name and created when missing;
+ * units must already exist. Rows default to COLLECTED — they're hire history.
+ */
+export async function importBookings(rows: BookingImportRow[]): Promise<ImportResult> {
+  const db = await readDb();
+  const customers = new Map(db.customers.map((c) => [c.name.trim().toLowerCase(), c]));
+  const unitById = new Map(db.units.map((u) => [u.id.trim().toLowerCase(), u]));
+  const skipped: ImportResult['skipped'] = [];
+  let imported = 0;
+  let createdCustomers = 0;
+  for (const row of rows) {
+    const customerName = row.customerName?.trim();
+    const unitKey = row.unitId?.trim().toLowerCase();
+    const label = `${customerName || '(blank)'} / ${row.unitId || '(blank)'}`;
+    if (!customerName || !row.startDate || !row.endDate) {
+      skipped.push({ name: label, reason: 'Missing customer, unit or dates' });
+      continue;
+    }
+    const unit = unitKey ? unitById.get(unitKey) : undefined;
+    if (!unit) {
+      skipped.push({ name: label, reason: `Unknown unit ${row.unitId}` });
+      continue;
+    }
+    let customer = customers.get(customerName.toLowerCase());
+    if (!customer) {
+      customer = { id: generateId('cust'), name: customerName, phone: row.contactPhone?.trim() ?? '', address: row.address?.trim() ?? '', createdAt: today() };
+      db.customers.push(customer);
+      customers.set(customerName.toLowerCase(), customer);
+      createdCustomers++;
+    }
+    const status: BookingStatus = row.status && IMPORT_STATUSES.includes(row.status) ? row.status : 'COLLECTED';
+    const booking: Booking = {
+      id: generateId('book'),
+      customerId: customer.id,
+      unitId: unit.id,
+      status,
+      startDate: row.startDate,
+      endDate: row.endDate,
+      contactName: row.contactName?.trim() || customer.name,
+      contactPhone: row.contactPhone?.trim() || customer.phone,
+      deliveryAddress: row.address?.trim() || customer.address,
+      tempRequired: 4,
+      powerAvailable: 'STANDARD',
+      rate: row.rate,
+      ratePeriod: row.ratePeriod === 'DAY' ? 'DAY' : 'WEEK',
+      notes: row.notes?.trim() || undefined,
+      createdAt: today(),
+    };
+    db.bookings.push(booking);
+    imported++;
+  }
+  await writeDb(db);
+  revalidatePath('/', 'layout');
+  return { success: true, imported, createdCustomers, skipped };
 }

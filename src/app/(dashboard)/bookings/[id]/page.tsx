@@ -34,6 +34,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   const live = lines.filter((l) => l.status !== 'CANCELLED');
   const status = groupStatus(lines.map((l) => l.status));
   const cancelled = status === 'CANCELLED';
+  const paid = lines.length > 0 && lines.every((l) => l.paymentStatus === 'PAID');
   const isActive = status === 'CONFIRMED' || status === 'ON_HIRE';
   const dates = (live.length ? live : lines).flatMap((l) => [l.startDate, l.endDate]).sort();
   const firstDate = dates[0];
@@ -94,6 +95,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
         meta={
           <>
             <StatusBadge status={status} />
+            {paid && <Pill tone="success">Paid</Pill>}
             <span className="font-mono-unit text-xs text-muted-foreground">{reference}</span>
           </>
         }
@@ -293,6 +295,14 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
                   </a>
                 </DetailItem>
               )}
+              <DetailItem label="Payment">
+                {paid ? (
+                  <span className="font-medium text-emerald-700">Received{booking.paidAt ? ` ${formatDate(booking.paidAt, { year: true })}` : ''} · dispatch can proceed</span>
+                ) : (
+                  <span className="text-muted-foreground">Not marked as paid</span>
+                )}
+              </DetailItem>
+              <DetailItem label="Payment terms">{customer.paymentTerms === 'ADVANCE' ? 'Pays in advance' : customer.paymentTerms === 'CREDIT' ? 'On credit' : <span className="text-muted-foreground">Not set</span>}</DetailItem>
               <DetailItem label="Invoice address">
                 {customer.invoiceAddress ? (
                   <span className="block leading-relaxed">

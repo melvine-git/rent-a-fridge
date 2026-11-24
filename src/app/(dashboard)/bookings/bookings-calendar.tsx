@@ -35,7 +35,7 @@ import type { BookingListItem } from '@/lib/actions';
 import { cn } from '@/lib/utils';
 import { GBP, STATUS_META, TONE_CLASSES, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, nextServiceDate, powerLabel, unitDisplayStatus, type UnitDisplayStatus } from '@/lib/domain';
 import { bookingRef } from '@/lib/jobs';
-import { daysBetween, formatDate, formatDateRange, formatPhone, toISODate } from '@/lib/format';
+import { daysBetween, formatCapacity, formatDate, formatDateRange, formatDimensions, formatPhone, toISODate } from '@/lib/format';
 
 export type PlannerView = 'timeline' | 'list';
 
@@ -241,7 +241,7 @@ export function BookingsCalendar({ bookings, allUnits, list, view, onView, listS
   return (
     <div className="grid gap-4 lg:grid-cols-[232px_minmax(0,1fr)]">
       {/* Filters */}
-      <aside className="h-fit space-y-5 rounded-2xl border bg-white p-4 shadow-[var(--shadow-xs)] lg:sticky lg:top-20">
+      <aside className="h-fit space-y-5 rounded-2xl border bg-white p-4 shadow-(--shadow-xs) lg:sticky lg:top-20">
         <Section title="View">
           <div className="grid grid-cols-2 gap-1 rounded-lg border bg-white p-0.5">
             {(
@@ -347,7 +347,7 @@ export function BookingsCalendar({ bookings, allUnits, list, view, onView, listS
       {view === 'list' ? (
         <div className="min-w-0">{listSlot}</div>
       ) : (
-        <section className="min-w-0 overflow-hidden rounded-2xl border bg-white shadow-[var(--shadow-xs)]">
+        <section className="min-w-0 overflow-hidden rounded-2xl border bg-white shadow-(--shadow-xs)">
           {/* Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
             <div className="flex flex-wrap items-center gap-3">
@@ -392,10 +392,10 @@ export function BookingsCalendar({ bookings, allUnits, list, view, onView, listS
 
           {/* Grid */}
           <div className="scrollbar-thin overflow-x-auto">
-            <div className={numDays === 28 ? 'min-w-[1500px]' : 'min-w-[1000px]'}>
+            <div className={numDays === 28 ? 'min-w-375' : 'min-w-250'}>
               <div className="flex border-b">
-                <div className="sticky left-0 z-20 flex w-[130px] shrink-0 border-r bg-white sm:w-[240px]">
-                  <button type="button" onClick={() => setSortDesc((d) => !d)} className="flex w-[130px] flex-col items-start justify-center px-4 py-2 text-left" title="Sort by unit">
+                <div className="sticky left-0 z-20 flex w-32.5 shrink-0 border-r bg-white sm:w-60">
+                  <button type="button" onClick={() => setSortDesc((d) => !d)} className="flex w-32.5 flex-col items-start justify-center px-4 py-2 text-left" title="Sort by unit">
                     <span className="flex items-center gap-1 text-[12px] font-semibold text-foreground">
                       Unit <ChevronsUpDown className="size-3 text-muted-foreground" />
                     </span>
@@ -411,10 +411,10 @@ export function BookingsCalendar({ bookings, allUnits, list, view, onView, listS
                     const weekend = day.getDay() === 0 || day.getDay() === 6;
                     return (
                       <div key={i} className={cn('flex flex-1 flex-col items-center justify-center gap-0.5 border-r py-2 last:border-r-0', isToday ? 'bg-red-50' : weekend && 'bg-stone-50')}>
-                        <span className={cn('text-[10px] font-semibold tracking-wide uppercase', isToday ? 'text-[var(--brand-red)]' : 'text-muted-foreground')}>
+                        <span className={cn('text-[10px] font-semibold tracking-wide uppercase', isToday ? 'text-(--brand-red)' : 'text-muted-foreground')}>
                           {day.toLocaleDateString('en-GB', { weekday: 'short' }).slice(0, numDays === 28 ? 1 : 3)}
                         </span>
-                        <span className={cn('tabular flex size-6 items-center justify-center rounded-full text-[13px] font-semibold', isToday ? 'bg-[var(--brand-red)] text-white' : 'text-foreground')}>{day.getDate()}</span>
+                        <span className={cn('tabular flex size-6 items-center justify-center rounded-full text-[13px] font-semibold', isToday ? 'bg-(--brand-red) text-white' : 'text-foreground')}>{day.getDate()}</span>
                       </div>
                     );
                   })}
@@ -427,7 +427,7 @@ export function BookingsCalendar({ bookings, allUnits, list, view, onView, listS
                   title="No units match these filters"
                   description="Try a different status or unit type."
                   action={
-                    <button type="button" onClick={clearFilters} className="text-sm font-medium text-[var(--brand-red)] hover:underline">
+                    <button type="button" onClick={clearFilters} className="text-sm font-medium text-(--brand-red) hover:underline">
                       Clear filters
                     </button>
                   }
@@ -438,14 +438,14 @@ export function BookingsCalendar({ bookings, allUnits, list, view, onView, listS
                   const occ = Math.round((bookedDays(unit) / numDays) * 100);
                   return (
                     <div key={unit.id} className="group/row flex border-b last:border-b-0">
-                      <div className="sticky left-0 z-10 flex w-[130px] shrink-0 border-r bg-white transition-colors group-hover/row:bg-stone-50 sm:w-[240px]">
+                      <div className="sticky left-0 z-10 flex w-32.5 shrink-0 border-r bg-white transition-colors group-hover/row:bg-stone-50 sm:w-60">
                         <Link
                           href={`/units/${unit.id}`}
                           onMouseEnter={(e) => showHover(e, unit)}
                           onMouseLeave={() => setHover(null)}
-                          className="flex w-[130px] items-center gap-2.5 px-3 py-2"
+                          className="flex w-32.5 items-center gap-2.5 px-3 py-2"
                         >
-                          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-gradient-to-b from-white to-stone-100 text-stone-700">
+                          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-linear-to-b from-white to-stone-100 text-stone-700">
                             <UnitTypeIcon type={unit.unitType} className="size-4 text-stone-700" />
                           </span>
                           <span className="min-w-0">
@@ -462,11 +462,11 @@ export function BookingsCalendar({ bookings, allUnits, list, view, onView, listS
                           </span>
                         </div>
                       </div>
-                      <div className={cn('relative flex h-[52px] flex-1', status === 'MAINTENANCE' && 'bg-hatch', status === 'BREAKDOWN' && 'bg-red-50/30')}>
+                      <div className={cn('relative flex h-13 flex-1', status === 'MAINTENANCE' && 'bg-hatch', status === 'BREAKDOWN' && 'bg-red-50/30')}>
                         {days.map((day, i) => (
                           <div key={i} className={cn('flex-1 border-r border-border/50 last:border-r-0', i === todayIndex ? 'bg-red-50/50' : (day.getDay() === 0 || day.getDay() === 6) && 'bg-stone-50/70')} />
                         ))}
-                        {todayIndex >= 0 && <div className="pointer-events-none absolute inset-y-0 z-[8] w-px bg-[var(--brand-red)]" style={{ left: `${todayIndex * colWidth}%` }} />}
+                        {todayIndex >= 0 && <div className="pointer-events-none absolute inset-y-0 z-8 w-px bg-(--brand-red)" style={{ left: `${todayIndex * colWidth}%` }} />}
                         {barsFor(unit).map((bar) => {
                           const style = BAR[bar.kind];
                           const span = bar.e - bar.s + 1;
@@ -483,10 +483,10 @@ export function BookingsCalendar({ bookings, allUnits, list, view, onView, listS
                               onMouseLeave={() => setHover(null)}
                               aria-label={`${unit.id}: ${bar.title}${bar.sub ? `, ${bar.sub}` : ''}`}
                               className={cn(
-                                'absolute top-1.5 bottom-1.5 z-[6] flex min-w-0 items-center gap-2 overflow-hidden rounded-lg border px-2.5 text-left shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                                'absolute top-1.5 bottom-1.5 z-6 flex min-w-0 items-center gap-2 overflow-hidden rounded-lg border px-2.5 text-left shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
                                 style.cls,
                                 avail && 'justify-center shadow-none',
-                                !avail && 'hover:-translate-y-px hover:shadow-[var(--shadow-md)]'
+                                !avail && 'hover:-translate-y-px hover:shadow-(--shadow-md)'
                               )}
                               style={{ left: `calc(${bar.s * colWidth}% + 3px)`, width: `calc(${span * colWidth}% - 6px)` }}
                             >
@@ -625,7 +625,7 @@ export function BookingsCalendar({ bookings, allUnits, list, view, onView, listS
               <div className="flex gap-2 border-t px-5 py-4">
                 <Link
                   href={`/bookings/${selectedRef}`}
-                  className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md bg-[var(--brand-red)] text-sm font-medium text-white hover:bg-[var(--brand-red-dark)]"
+                  className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md bg-(--brand-red) text-sm font-medium text-white hover:bg-(--brand-red-dark)"
                 >
                   Open booking <ArrowUpRight className="size-4" />
                 </Link>
@@ -664,17 +664,17 @@ function UnitHoverCard({ unit, booking, x, y, today, occupancy }: { unit: Unit; 
   const status = unitDisplayStatus(unit);
   const meta = STATUS_META[status];
   const photo = unit.specifications?.photoUrls?.[0];
-  const dims = unit.specifications?.externalDimensions;
+  const dims = formatDimensions(unit.specifications?.externalDimensions, unit.specifications?.dimensionUnit);
   const service = nextServiceDate(unit);
-  const capacity = unit.specifications?.cubicCapacity;
+  const capacity = formatCapacity(unit.specifications);
   return (
-    <div className="pointer-events-none fixed z-50 w-[300px] overflow-hidden rounded-xl border bg-white shadow-[0_12px_32px_-8px_rgb(0_0_0/0.25)]" style={{ left: x, top: y }} role="tooltip">
+    <div className="pointer-events-none fixed z-50 w-75 overflow-hidden rounded-xl border bg-white shadow-[0_12px_32px_-8px_rgb(0_0_0/0.25)]" style={{ left: x, top: y }} role="tooltip">
       <div className="flex items-center gap-3 border-b p-3.5">
         {photo ? (
           // eslint-disable-next-line @next/next/no-img-element -- served from the private uploads route
           <img src={photo} alt="" className="size-12 shrink-0 rounded-lg border object-cover" />
         ) : (
-          <span className="flex size-12 shrink-0 items-center justify-center rounded-lg border bg-gradient-to-b from-white to-stone-100">
+          <span className="flex size-12 shrink-0 items-center justify-center rounded-lg border bg-linear-to-b from-white to-stone-100">
             <UnitTypeIcon type={unit.unitType} className="size-5 text-stone-700" />
           </span>
         )}
@@ -689,10 +689,10 @@ function UnitHoverCard({ unit, booking, x, y, today, occupancy }: { unit: Unit; 
         </div>
       </div>
       <dl className="grid grid-cols-2 gap-x-3 gap-y-2.5 p-3.5 text-xs">
-        <HoverFact label="Capacity" value={capacity ? `${capacity} m³` : '—'} />
+        <HoverFact label="Capacity" value={capacity ?? '—'} />
         <HoverFact label="Occupancy (view)" value={`${occupancy}%`} />
         <HoverFact label="Next service" value={service ? formatDate(service) : 'Not scheduled'} warn={!!service && service < today} />
-        <HoverFact label="Size (L×W×H)" value={dims ? `${dims.length}×${dims.width}×${dims.height}` : '—'} />
+        <HoverFact label="Size (L×W×H)" value={dims ?? '—'} />
         {unit.dataLoggerId && <HoverFact label="Data logger" value={unit.dataLoggerId} />}
         {unit.specifications?.doorAccess && <HoverFact label="Door access" value={unit.specifications.doorAccess} />}
       </dl>

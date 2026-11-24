@@ -9,7 +9,7 @@ import { FleetMap, type MapPoint, type RouteLeg } from './fleet-map';
 import { STATUS_META, TONE_CLASSES, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, nextServiceDate, powerShort, unitDisplayStatus, type UnitDisplayStatus } from '@/lib/domain';
 import { bookingRef, groupVisits } from '@/lib/jobs';
 import { hireSteps, type LineJob, type StepState } from '@/lib/hire-steps';
-import { daysBetween, daysFromToday, formatDate, formatDayDate, formatPhone } from '@/lib/format';
+import { daysBetween, daysFromToday, formatCapacity, formatDate, formatDayDate, formatPhone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { ArrowUpRight, CalendarPlus, Check, ChevronLeft, ChevronRight, MessageSquare, Phone, Thermometer, TriangleAlert, Wrench, X, Zap } from 'lucide-react';
 import type { BookingWithDetails, DeliveryChecklist, Unit } from '@/types';
@@ -300,6 +300,7 @@ const HOVER_MOTION: Record<Unit['unitType'], string> = {
   CHEST_FREEZER: 'duration-700 group-hover:rotate-[120deg]',
   COLD_STORE: 'duration-300 group-hover:-translate-y-[2px] group-hover:scale-110',
   UPRIGHT_FRIDGE: 'group-hover:animate-[fridge-wobble_0.6s_ease-in-out]',
+  STATIC: 'duration-300 group-hover:scale-105',
 };
 
 /** Unit photo if there is one, otherwise a soft tile with the type icon; the corner dot shows status. */
@@ -652,7 +653,7 @@ function UnitPanel({
   const elapsed = hire ? Math.min(total, Math.max(0, daysBetween(hire.startDate, today))) : 0;
   const daysLeft = hire ? daysFromToday(hire.endDate) : 0;
   const service = nextServiceDate(unit);
-  const capacity = unit.specifications?.cubicCapacity;
+  const capacity = formatCapacity(unit.specifications);
   const onSite = hire ? accessoryItems(hire, left) : [];
 
   return (
@@ -666,7 +667,7 @@ function UnitPanel({
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {UNIT_TYPE_LABELS[unit.unitType]} · {UNIT_SIZE_LABELS[unit.size]}
-            {capacity ? ` · ${capacity} m³` : ''}
+            {capacity ? ` · ${capacity}` : ''}
           </p>
         </div>
         <button type="button" onClick={onClose} className="flex size-8 shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-muted" aria-label="Back to the run">
