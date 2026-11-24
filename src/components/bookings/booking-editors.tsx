@@ -20,7 +20,7 @@ export const ACCESSORIES: { key: keyof BookingAccessories; label: string }[] = [
 
 const NO_ACCESSORIES: BookingAccessories = { hitchLock: false, wheelClamp: false, doorLock: false, tempRecorder: false };
 
-export const DEFAULT_TEMP: Record<UnitType, number> = { COLD_STORE: 4, UPRIGHT_FRIDGE: 4, CHEST_FREEZER: -18 };
+export const DEFAULT_TEMP: Record<UnitType, number> = { COLD_STORE: 4, UPRIGHT_FRIDGE: 4, CHEST_FREEZER: -18, STATIC: 4 };
 
 // ============ Unit lines ============
 

@@ -17,11 +17,12 @@ export function UnitIllustration({ type, className }: { type: UnitType; classNam
       <ellipse cx="120" cy="148" rx="92" ry="7" fill="#000" opacity="0.08" />
       {type === 'COLD_STORE' && <ColdStore />}
       {type === 'CHEST_FREEZER' && <ChestFreezer />}
+      {type === 'STATIC' && <ColdStore />}
     </svg>
   );
 }
 
-const LABEL: Record<UnitType, string> = { COLD_STORE: 'Cold store', UPRIGHT_FRIDGE: 'Upright fridge', CHEST_FREEZER: 'Chest freezer' };
+const LABEL: Record<UnitType, string> = { COLD_STORE: 'Cold store', UPRIGHT_FRIDGE: 'Upright fridge', CHEST_FREEZER: 'Chest freezer', STATIC: 'Static' };
 
 function ColdStore() {
   return (

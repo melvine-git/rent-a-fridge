@@ -1,4 +1,4 @@
-import { Refrigerator, Snowflake, Warehouse, type LucideIcon } from 'lucide-react';
+import { Container, Refrigerator, Snowflake, Warehouse, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { UnitType } from '@/types';
 
@@ -6,6 +6,7 @@ export const UNIT_TYPE_ICON: Record<UnitType, LucideIcon> = {
   COLD_STORE: Warehouse,
   UPRIGHT_FRIDGE: Refrigerator,
   CHEST_FREEZER: Snowflake,
+  STATIC: Container,
 };
 
 export function UnitTypeIcon({ type, className, boxed }: { type: UnitType; className?: string; boxed?: boolean }) {

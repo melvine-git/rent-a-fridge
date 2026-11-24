@@ -300,6 +300,7 @@ const HOVER_MOTION: Record<Unit['unitType'], string> = {
   CHEST_FREEZER: 'duration-700 group-hover:rotate-[120deg]',
   COLD_STORE: 'duration-300 group-hover:-translate-y-[2px] group-hover:scale-110',
   UPRIGHT_FRIDGE: 'group-hover:animate-[fridge-wobble_0.6s_ease-in-out]',
+  STATIC: 'duration-300 group-hover:scale-105',
 };
 
 /** Unit photo if there is one, otherwise a soft tile with the type icon; the corner dot shows status. */
