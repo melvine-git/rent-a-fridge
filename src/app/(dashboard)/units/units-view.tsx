@@ -41,7 +41,7 @@ import { toast } from 'sonner';
 import { addUnit } from '@/lib/actions';
 import { cn } from '@/lib/utils';
 import { UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, unitDisplayStatus, type UnitDisplayStatus } from '@/lib/domain';
-import { daysBetween, daysFromToday, formatCapacity, formatDate } from '@/lib/format';
+import { daysBetween, daysFromToday, formatCapacity, formatDate, formatDimensions } from '@/lib/format';
 import type { UnitType, UnitSize, UnitWithHire } from '@/types';
 
 interface UnitsViewProps {
@@ -74,10 +74,7 @@ function capacity(u: UnitWithHire) {
   return formatCapacity(u.specifications);
 }
 function dimensions(u: UnitWithHire) {
-  const d = u.specifications?.externalDimensions;
-  if (!d) return undefined;
-  const m = (mm: number) => (mm / 1000).toFixed(1);
-  return `${m(d.length)} × ${m(d.width)} × ${m(d.height)} m`;
+  return formatDimensions(u.specifications?.externalDimensions, u.specifications?.dimensionUnit);
 }
 
 export function UnitsView({ units }: UnitsViewProps) {

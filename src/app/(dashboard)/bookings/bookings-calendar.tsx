@@ -35,7 +35,7 @@ import type { BookingListItem } from '@/lib/actions';
 import { cn } from '@/lib/utils';
 import { GBP, STATUS_META, TONE_CLASSES, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, nextServiceDate, powerLabel, unitDisplayStatus, type UnitDisplayStatus } from '@/lib/domain';
 import { bookingRef } from '@/lib/jobs';
-import { daysBetween, formatCapacity, formatDate, formatDateRange, formatPhone, toISODate } from '@/lib/format';
+import { daysBetween, formatCapacity, formatDate, formatDateRange, formatDimensions, formatPhone, toISODate } from '@/lib/format';
 
 export type PlannerView = 'timeline' | 'list';
 
@@ -664,7 +664,7 @@ function UnitHoverCard({ unit, booking, x, y, today, occupancy }: { unit: Unit; 
   const status = unitDisplayStatus(unit);
   const meta = STATUS_META[status];
   const photo = unit.specifications?.photoUrls?.[0];
-  const dims = unit.specifications?.externalDimensions;
+  const dims = formatDimensions(unit.specifications?.externalDimensions, unit.specifications?.dimensionUnit);
   const service = nextServiceDate(unit);
   const capacity = formatCapacity(unit.specifications);
   return (
@@ -692,7 +692,7 @@ function UnitHoverCard({ unit, booking, x, y, today, occupancy }: { unit: Unit; 
         <HoverFact label="Capacity" value={capacity ?? '—'} />
         <HoverFact label="Occupancy (view)" value={`${occupancy}%`} />
         <HoverFact label="Next service" value={service ? formatDate(service) : 'Not scheduled'} warn={!!service && service < today} />
-        <HoverFact label="Size (L×W×H)" value={dims ? `${dims.length}×${dims.width}×${dims.height}` : '—'} />
+        <HoverFact label="Size (L×W×H)" value={dims ?? '—'} />
         {unit.dataLoggerId && <HoverFact label="Data logger" value={unit.dataLoggerId} />}
         {unit.specifications?.doorAccess && <HoverFact label="Door access" value={unit.specifications.doorAccess} />}
       </dl>

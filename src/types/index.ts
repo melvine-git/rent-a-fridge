@@ -54,10 +54,12 @@ export interface Customer {
   createdAt: string; // YYYY-MM-DD
 }
 
+export type DimensionUnit = 'M' | 'CM';
+
 export interface UnitDimensions {
-  length: number; // mm
-  width: number; // mm
-  height: number; // mm
+  length: number; // in the spec's `dimensionUnit`
+  width: number;
+  height: number;
 }
 
 export type CapacityUnit = 'M2' | 'M3' | 'L';
@@ -67,6 +69,7 @@ export interface UnitSpecifications {
   internalDimensions?: UnitDimensions;
   cubicCapacity?: number; // capacity value, measured in `capacityUnit`
   capacityUnit?: CapacityUnit; // absent on older rows = treated as m³
+  dimensionUnit?: DimensionUnit; // unit the dimensions were entered in; absent on older rows = mm
   doorAccess?: string; // e.g., "Rear doors", "Side access"
   chassisNumber?: string;
   photoUrls?: string[];

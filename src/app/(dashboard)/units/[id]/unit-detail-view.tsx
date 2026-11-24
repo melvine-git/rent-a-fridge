@@ -19,9 +19,9 @@ import { UnitPhotos } from './unit-photos';
 import { ServiceRecordDialog, AttachmentLinks } from '@/components/maintenance/service-record-dialog';
 import { updateUnit, updateUnitSpecifications, addBOMComponent, updateBOMComponent, removeBOMComponent, setUnitStatus, setUnitBreakdown, setUnitNextService, deleteUnit } from '@/lib/actions';
 import { COMPONENT_LABELS, GBP, RECORD_TYPE_META, STATUS_META, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, nextServiceDate, unitDisplayStatus } from '@/lib/domain';
-import { daysBetween, daysFromToday, formatCapacity, formatDate } from '@/lib/format';
+import { daysBetween, daysFromToday, formatCapacity, formatDate, formatDimensions } from '@/lib/format';
 import { Activity, ArrowUpRight, CalendarClock, CalendarDays, Cpu, Pencil, Plus, Ruler, Trash2, TriangleAlert, Wrench } from 'lucide-react';
-import type { Unit, Booking, Customer, BOMComponent, CapacityUnit, MaintenanceRecord, UnitType, UnitSize, UnitStatus } from '@/types';
+import type { Unit, Booking, Customer, BOMComponent, CapacityUnit, DimensionUnit, MaintenanceRecord, UnitType, UnitSize, UnitStatus } from '@/types';
 
 type BookingWithCustomer = Booking & { customer: Customer };
 
@@ -34,8 +34,7 @@ interface Props {
 export type UnitTab = 'overview' | 'bom' | 'bookings' | 'maintenance';
 type Tab = UnitTab;
 
-const dims = (d?: { length: number; width: number; height: number }) =>
-  d ? `${d.length.toLocaleString()} × ${d.width.toLocaleString()} × ${d.height.toLocaleString()} mm` : undefined;
+
 
 export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTab }: Props & { initialTab?: UnitTab }) {
   const router = useRouter();
@@ -58,13 +57,16 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
     dataLoggerId: unit.dataLoggerId || '',
   });
   const s = unit.specifications;
+  // Rows saved before units existed are millimetres — open the form in centimetres
+  const dimInput = (v?: number) => (v == null ? '' : String(s?.dimensionUnit ? v : v / 10));
   const [specsForm, setSpecsForm] = useState({
-    extLength: s?.externalDimensions?.length?.toString() || '',
-    extWidth: s?.externalDimensions?.width?.toString() || '',
-    extHeight: s?.externalDimensions?.height?.toString() || '',
-    intLength: s?.internalDimensions?.length?.toString() || '',
-    intWidth: s?.internalDimensions?.width?.toString() || '',
-    intHeight: s?.internalDimensions?.height?.toString() || '',
+    extLength: dimInput(s?.externalDimensions?.length),
+    extWidth: dimInput(s?.externalDimensions?.width),
+    extHeight: dimInput(s?.externalDimensions?.height),
+    intLength: dimInput(s?.internalDimensions?.length),
+    intWidth: dimInput(s?.internalDimensions?.width),
+    intHeight: dimInput(s?.internalDimensions?.height),
+    dimensionUnit: s?.dimensionUnit ?? ('CM' as DimensionUnit),
     cubicCapacity: s?.cubicCapacity?.toString() || '',
     capacityUnit: s?.capacityUnit ?? ((s?.cubicCapacity ?? 1) < 1 ? 'L' : 'M3'),
     doorAccess: s?.doorAccess || '',
@@ -106,10 +108,11 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
   };
 
   const handleSaveSpecs = async () => {
-    const n = (v: string) => (v ? parseInt(v) : 0);
+    const n = (v: string) => (v ? parseFloat(v) : 0);
     const r = await updateUnitSpecifications(unit.id, {
       externalDimensions: specsForm.extLength ? { length: n(specsForm.extLength), width: n(specsForm.extWidth), height: n(specsForm.extHeight) } : undefined,
       internalDimensions: specsForm.intLength ? { length: n(specsForm.intLength), width: n(specsForm.intWidth), height: n(specsForm.intHeight) } : undefined,
+      dimensionUnit: specsForm.extLength || specsForm.intLength ? specsForm.dimensionUnit : undefined,
       cubicCapacity: specsForm.cubicCapacity ? parseFloat(specsForm.cubicCapacity) : undefined,
       capacityUnit: specsForm.cubicCapacity ? (specsForm.capacityUnit as CapacityUnit) : undefined,
       doorAccess: specsForm.doorAccess || undefined,
@@ -328,8 +331,8 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
           >
             {s ? (
               <DetailList cols={2}>
-                <DetailItem label="External dimensions (L × W × H)">{dims(s.externalDimensions) ?? <span className="text-muted-foreground">Not specified</span>}</DetailItem>
-                <DetailItem label="Internal dimensions (L × W × H)">{dims(s.internalDimensions) ?? <span className="text-muted-foreground">Not specified</span>}</DetailItem>
+                <DetailItem label="External dimensions (L × W × H)">{formatDimensions(s.externalDimensions, s.dimensionUnit) ?? <span className="text-muted-foreground">Not specified</span>}</DetailItem>
+                <DetailItem label="Internal dimensions (L × W × H)">{formatDimensions(s.internalDimensions, s.dimensionUnit) ?? <span className="text-muted-foreground">Not specified</span>}</DetailItem>
                 <DetailItem label="Capacity">{formatCapacity(s) ?? <span className="text-muted-foreground">Not specified</span>}</DetailItem>
                 <DetailItem label="Door access">{s.doorAccess || <span className="text-muted-foreground">Not specified</span>}</DetailItem>
                 <DetailItem label="Chassis number">
@@ -659,9 +662,16 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Specifications</DialogTitle>
-            <DialogDescription>Dimensions in millimetres.</DialogDescription>
+            <DialogDescription>Dimensions in centimetres or metres.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[13px] font-medium text-foreground">Dimensions</span>
+              <select value={specsForm.dimensionUnit} onChange={(e) => setSpecsForm((p) => ({ ...p, dimensionUnit: e.target.value as DimensionUnit }))} className={selectClass}>
+                <option value="CM">centimetres (cm)</option>
+                <option value="M">metres (m)</option>
+              </select>
+            </div>
             {(
               [
                 ['External (L × W × H)', 'extLength', 'extWidth', 'extHeight'],
@@ -675,6 +685,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, initialTa
                     <Input
                       key={k}
                       type="number"
+                      step="any"
                       placeholder={['Length', 'Width', 'Height'][i]}
                       value={specsForm[k]}
                       onChange={(e) => setSpecsForm((p) => ({ ...p, [k]: e.target.value }))}
