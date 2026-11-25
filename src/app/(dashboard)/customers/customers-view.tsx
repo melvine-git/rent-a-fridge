@@ -594,7 +594,7 @@ export function CustomersView({
 
             <div className="rounded-lg bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
               <p className="font-medium text-foreground">
-                What's next?
+                What&apos;s next?
               </p>
               After creating this customer, you can add additional delivery
               addresses, set hire preferences and create bookings.
