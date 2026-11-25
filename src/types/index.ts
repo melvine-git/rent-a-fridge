@@ -128,7 +128,6 @@ export interface Unit {
   specifications?: UnitSpecifications;
   bom?: BOMComponent[];
   maintenanceHistory?: MaintenanceRecord[];
-  dataLoggerId?: string; // For data logger integration
   /** Set when the unit has broken down; blocks new bookings until cleared. Can be set while on hire. */
   breakdown?: { reportedAt: string; notes?: string };
   /** Manually scheduled next service, overriding the date from the last service record */

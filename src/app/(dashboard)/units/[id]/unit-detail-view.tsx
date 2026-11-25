@@ -20,7 +20,7 @@ import { ServiceRecordDialog, AttachmentLinks } from '@/components/maintenance/s
 import { updateUnit, updateUnitSpecifications, addBOMComponent, updateBOMComponent, removeBOMComponent, setUnitStatus, setUnitBreakdown, setUnitNextService, deleteUnit } from '@/lib/actions';
 import { COMPONENT_LABELS, GBP, RECORD_TYPE_META, STATUS_META, UNIT_SIZE_LABELS, UNIT_TYPE_LABELS, nextServiceDate, unitDisplayStatus } from '@/lib/domain';
 import { daysBetween, daysFromToday, formatCapacity, formatDate, formatDimensions } from '@/lib/format';
-import { Activity, ArrowUpRight, CalendarClock, CalendarDays, Cpu, Pencil, Plus, Ruler, Trash2, TriangleAlert, Wrench } from 'lucide-react';
+import { ArrowUpRight, CalendarClock, CalendarDays, Cpu, Pencil, Plus, Ruler, Trash2, TriangleAlert, Wrench } from 'lucide-react';
 import type { Unit, Booking, Customer, BOMComponent, CapacityUnit, DimensionUnit, MaintenanceRecord, UnitType, UnitSize, UnitStatus } from '@/types';
 
 type BookingWithCustomer = Booking & { customer: Customer };
@@ -55,7 +55,6 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, allUnits,
     size: unit.size,
     unitType: unit.unitType,
     notes: unit.notes || '',
-    dataLoggerId: unit.dataLoggerId || '',
   });
   const s = unit.specifications;
   // Rows saved before units existed are millimetres — open the form in centimetres
@@ -102,7 +101,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, allUnits,
   const failed = (r: { error?: string }) => toast.error('Could not save', { description: r.error ?? 'Please try again' });
 
   const handleSaveEdit = async () => {
-    const r = await updateUnit(unit.id, { ...editForm, notes: editForm.notes.trim(), dataLoggerId: editForm.dataLoggerId.trim() });
+    const r = await updateUnit(unit.id, { ...editForm, notes: editForm.notes.trim() });
     if (r.success) {
       setIsEditing(false);
       done('Unit updated');
@@ -305,7 +304,6 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, allUnits,
               serviceDays === undefined ? 'Click to schedule' : serviceDays < 0 ? <span className="font-medium text-red-600">{-serviceDays} days overdue</span> : `in ${serviceDays} days`,
           },
           { label: 'Capacity', value: formatCapacity(s) ?? '—', sub: s?.doorAccess || 'Door access not set' },
-          { label: 'Data logger', value: unit.dataLoggerId ? 'Connected' : 'None', sub: unit.dataLoggerId ? <span className="font-mono">{unit.dataLoggerId}</span> : 'Not configured' },
         ]}
       />
 
@@ -359,9 +357,6 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, allUnits,
             <DetailList>
               <DetailItem label="Unit type">{UNIT_TYPE_LABELS[unit.unitType]}</DetailItem>
               <DetailItem label="Size">{UNIT_SIZE_LABELS[unit.size]}</DetailItem>
-              <DetailItem label="Data logger ID">
-                {unit.dataLoggerId ? <span className="font-mono">{unit.dataLoggerId}</span> : <span className="text-muted-foreground">Not set</span>}
-              </DetailItem>
               <DetailItem label="Notes">{unit.notes || <span className="text-muted-foreground">No notes</span>}</DetailItem>
             </DetailList>
           </Panel>
@@ -471,11 +466,10 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, allUnits,
       )}
 
       {tab === 'maintenance' && (
-        <div className="grid gap-4 lg:grid-cols-3 lg:gap-6">
+        <div>
           <Panel
             title="Service history"
             description="Click a record to edit, move or delete it"
-            className="lg:col-span-2"
             action={
               <Button variant="outline" size="sm" onClick={() => setServiceDialog({ key: Date.now() })} className="h-8 gap-1 px-2.5 text-xs">
                 <Plus /> Log service
@@ -530,18 +524,6 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, allUnits,
             ) : (
               <EmptyState compact icon={Wrench} title="No service records" />
             )}
-          </Panel>
-          <Panel title="Data logger">
-            <div className="flex items-center gap-3 p-4">
-              <Activity className={unit.dataLoggerId ? 'size-5 text-emerald-600' : 'size-5 text-muted-foreground/50'} />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-foreground">{unit.dataLoggerId ? 'Logger connected' : 'No logger'}</div>
-                <div className="truncate font-mono text-xs text-muted-foreground">{unit.dataLoggerId || 'Not configured'}</div>
-              </div>
-            </div>
-            <p className="border-t px-4 py-3 text-xs text-muted-foreground">
-              {unit.dataLoggerId ? 'Live readings will appear here once the data logger platform is connected.' : 'Set the logger ID under Edit so readings can be linked when the integration is connected.'}
-            </p>
           </Panel>
         </div>
       )}
@@ -605,23 +587,6 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, allUnits,
             </option>
           ))}
         </select>
-      </Field>
-
-      <Field
-        label="Data logger ID"
-        hint="The unique device ID from your data logger software."
-      >
-        <Input
-          value={editForm.dataLoggerId}
-          onChange={(e) =>
-            setEditForm((p) => ({
-              ...p,
-              dataLoggerId: e.target.value,
-            }))
-          }
-          placeholder="e.g. DL-2041"
-          className="h-10 rounded-lg border-gray-200 bg-gray-50/50 font-mono text-sm transition placeholder:font-sans focus:border-(--brand-red) focus:bg-white focus:ring-2 focus:ring-(--brand-red)/10"
-        />
       </Field>
 
       <Field label="Notes" hint="Add any additional information about this unit.">

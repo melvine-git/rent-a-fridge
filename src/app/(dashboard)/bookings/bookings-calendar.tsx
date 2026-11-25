@@ -693,7 +693,6 @@ function UnitHoverCard({ unit, booking, x, y, today, occupancy }: { unit: Unit; 
         <HoverFact label="Occupancy (view)" value={`${occupancy}%`} />
         <HoverFact label="Next service" value={service ? formatDate(service) : 'Not scheduled'} warn={!!service && service < today} />
         <HoverFact label="Size (L×W×H)" value={dims ?? '—'} />
-        {unit.dataLoggerId && <HoverFact label="Data logger" value={unit.dataLoggerId} />}
         {unit.specifications?.doorAccess && <HoverFact label="Door access" value={unit.specifications.doorAccess} />}
       </dl>
       {(unit.breakdown || (status === 'MAINTENANCE' && unit.notes)) && (

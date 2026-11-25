@@ -1758,7 +1758,7 @@ export async function getShellData(): Promise<ShellData> {
         id: u.id,
         label: u.id,
         sublabel: `${u.unitType.replace('_', ' ').toLowerCase()} · ${u.breakdown ? 'breakdown' : u.status.replace('_', ' ').toLowerCase()}`,
-        keywords: [u.notes, u.dataLoggerId, u.specifications?.chassisNumber].join(' '),
+        keywords: [u.notes, u.specifications?.chassisNumber].join(' '),
         href: `/units/${u.id}`,
       })),
       ...[...groups.entries()].map(([gid, lines]) => {

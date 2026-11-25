@@ -30,7 +30,7 @@ export function DetailItem({
 /** Horizontal strip of headline facts directly under the page header. */
 export function StatStrip({ items }: { items: { label: string; value: React.ReactNode; sub?: React.ReactNode }[] }) {
   return (
-    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[var(--radius-lg)] border bg-border shadow-[var(--shadow-xs)] lg:grid-cols-4">
+    <div className={cn('grid gap-px overflow-hidden rounded-[var(--radius-lg)] border bg-border shadow-[var(--shadow-xs)]', items.length === 3 ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2 lg:grid-cols-4')}>
       {items.map((it) => (
         <div key={it.label} className="min-w-0 bg-card px-4 py-3.5">
           <div className="text-xs font-medium text-muted-foreground">{it.label}</div>

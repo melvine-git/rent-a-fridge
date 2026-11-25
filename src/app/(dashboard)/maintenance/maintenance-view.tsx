@@ -13,7 +13,7 @@ import { EmptyState } from '@/components/app/empty-state';
 import { TabBar } from '@/components/app/tab-bar';
 import { AlertBanner } from '@/components/app/alert-banner';
 import { UnitTypeIcon, UnitCode } from '@/components/app/unit-type-icon';
-import { Wrench, CalendarClock, ClipboardList, Cpu, Activity, Plus, CircleCheck, ExternalLink, Paperclip } from 'lucide-react';
+import { Wrench, CalendarClock, ClipboardList, Cpu, Plus, CircleCheck, Paperclip } from 'lucide-react';
 import { toast } from 'sonner';
 import { setUnitBreakdown, setUnitStatus } from '@/lib/actions';
 import { formatDate } from '@/lib/format';
@@ -48,7 +48,7 @@ export function MaintenanceView({
   allUnits,
 }: MaintenanceViewProps) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'overview' | 'logs' | 'components' | 'datalogger'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'logs' | 'components'>('overview');
   const [dialog, setDialog] = useState<{ key: number; record?: RecordWithUnit } | null>(null);
   const openDialog = (record?: RecordWithUnit) => setDialog({ key: Date.now(), record });
 
@@ -58,11 +58,6 @@ export function MaintenanceView({
     toast.success(`${unit.id} returned to fleet`);
     router.refresh();
   };
-
-  const openDataLogger = (unitId: string, loggerId?: string) =>
-    toast.info(loggerId ? `Connecting to logger ${loggerId}` : `No data logger configured for ${unitId}`, {
-      description: loggerId ? 'Data logger integration is pending configuration.' : undefined,
-    });
 
   return (
     <div className="space-y-6">
@@ -153,7 +148,6 @@ export function MaintenanceView({
           { value: 'overview', label: 'Overview' },
           { value: 'logs', label: 'Service log', count: maintenanceRecords.length },
           { value: 'components', label: 'Serviceable parts' },
-          { value: 'datalogger', label: 'Data loggers' },
         ]}
         trailing={
           <Button onClick={() => openDialog()} className="h-8 gap-1.5 px-3 hover:bg-[var(--brand-red-dark)]">
@@ -316,25 +310,6 @@ export function MaintenanceView({
 
           <ServiceableComponents components={serviceList} />
         </div>
-      )}
-
-      {activeTab === 'datalogger' && (
-        <Panel title="Data loggers" description="Temperature logger integration is pending configuration with the external provider">
-          <ul className="divide-y">
-            {allUnits.map((unit) => (
-              <li key={unit.id} className="flex items-center gap-3 px-4 py-3">
-                <Activity className={unit.dataLoggerId ? 'size-4 text-emerald-600' : 'size-4 text-muted-foreground/50'} />
-                <UnitCode id={unit.id} className="w-20" />
-                <span className="flex-1 text-sm text-muted-foreground">
-                  {unit.dataLoggerId ? <span className="font-mono text-xs text-foreground">{unit.dataLoggerId}</span> : 'Not configured'}
-                </span>
-                <Button size="sm" variant="outline" disabled={!unit.dataLoggerId} onClick={() => openDataLogger(unit.id, unit.dataLoggerId)} className="h-8 gap-1.5 px-2.5 text-xs">
-                  <ExternalLink className="size-3.5" /> View logs
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </Panel>
       )}
 
       {dialog && (
