@@ -1842,6 +1842,7 @@ export async function getDashboardData() {
       })
       .filter((d) => !!d),
     jobs: jobsByLine(db),
+    staff: db.staff,
     // Whoever has today's jobs, otherwise the first driver
     driver: ((id) => db.staff.find((s) => s.id === id) ?? db.staff.find((s) => s.role === 'DRIVER') ?? null)(
       db.dockets.find((d) => d.scheduledDate <= todayStr && (d.status !== 'COMPLETED' || d.completedAt?.slice(0, 10) === todayStr))?.staffId

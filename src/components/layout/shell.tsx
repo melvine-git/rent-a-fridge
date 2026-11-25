@@ -24,6 +24,13 @@ export function Shell({ children, data }: { children: React.ReactNode; data: She
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Any view can ask the notifications panel to open (e.g. dashboard "View alerts")
+  useEffect(() => {
+    const open = () => setNotificationsOpen(true);
+    window.addEventListener('open-notifications', open);
+    return () => window.removeEventListener('open-notifications', open);
+  }, []);
+
   return (
     <div className="min-h-screen bg-background">
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} counts={data.counts} />
