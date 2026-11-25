@@ -9,9 +9,10 @@ import { StatusBadge, Pill } from '@/components/ui/status-badge';
 import { QuoteTotals } from '@/components/bookings/booking-editors';
 import { BookingActions } from './booking-actions';
 import { BookingUnits } from './booking-units';
-import { GBP, lineCharge, powerLabel, quoteTotals } from '@/lib/domain';
+import { GBP, actionState, lineCharge, powerLabel, quoteTotals } from '@/lib/domain';
+import { ActionDoneButton } from '@/components/notifications/action-done-button';
 import { daysFromToday, formatDate, formatPhone, w3wUrl } from '@/lib/format';
-import { Ban, Navigation, Phone, ArrowUpRight, CircleAlert, ExternalLink } from 'lucide-react';
+import { Ban, Navigation, Phone, ArrowUpRight, CircleAlert, CircleCheck, ExternalLink } from 'lucide-react';
 import type { BookingStatus, DeliveryDocket } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -39,7 +40,8 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   const dates = (live.length ? live : lines).flatMap((l) => [l.startDate, l.endDate]).sort();
   const firstDate = dates[0];
   const lastDate = dates.at(-1)!;
-  const actionOverdue = booking.actionDate && isActive && daysFromToday(booking.actionDate) <= 0;
+  const action = actionState(booking, lines.map((l) => l.status));
+  const actionOverdue = action === 'open' && !!booking.actionDate && daysFromToday(booking.actionDate) <= 0;
   const delivered = live.filter((l) => l.status === 'ON_HIRE' || l.status === 'COLLECTED').length;
   const collected = live.filter((l) => l.status === 'COLLECTED').length;
   const totals = quoteTotals(lines, booking.quote);
@@ -114,12 +116,29 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
       )}
 
       {actionOverdue && (
-        <div className="flex items-start gap-3 rounded-[var(--radius-lg)] border border-red-200 bg-red-50/70 px-4 py-3">
-          <CircleAlert className="mt-0.5 size-4 shrink-0 text-red-600" />
-          <div className="text-sm">
+        <div className="flex items-center gap-3 rounded-[var(--radius-lg)] border border-red-200 bg-red-50/70 px-4 py-3">
+          <CircleAlert className="size-4 shrink-0 text-red-600" />
+          <div className="min-w-0 flex-1 text-sm">
             <span className="font-semibold text-red-900">{booking.actionDescription || 'Follow-up required'}</span>
             <span className="text-red-800/80"> · action was due {formatDate(booking.actionDate)}</span>
           </div>
+          <ActionDoneButton bookingId={reference} />
+        </div>
+      )}
+
+      {(action === 'done' || action === 'auto-delivered' || action === 'auto-collected') && isActive && (
+        <div className="flex items-center gap-3 rounded-[var(--radius-lg)] border bg-white px-4 py-2.5">
+          <CircleCheck className="size-4 shrink-0 text-emerald-600" />
+          <div className="min-w-0 flex-1 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{booking.actionDescription || 'Follow-up'}</span>
+            {' · '}
+            {action === 'done'
+              ? `done${booking.actionDoneAt ? ` ${formatDate(booking.actionDoneAt.split('T')[0])}` : ''}`
+              : action === 'auto-delivered'
+                ? 'done automatically when the delivery was signed off'
+                : 'done automatically when the collection was signed off'}
+          </div>
+          {action === 'done' && <ActionDoneButton bookingId={reference} done />}
         </div>
       )}
 

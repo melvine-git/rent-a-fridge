@@ -2,20 +2,20 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { CircleAlert, Phone, X, ChevronDown, ArrowUpRight } from 'lucide-react';
+import { CircleAlert, Phone, ChevronDown, ArrowUpRight } from 'lucide-react';
+import { ActionDoneButton } from './action-done-button';
 import { cn } from '@/lib/utils';
 import { daysFromToday, formatDate, formatPhone } from '@/lib/format';
 import type { BookingWithDetails } from '@/types';
 
 interface ActionAlertsProps {
-  overdueBookings: BookingWithDetails[];
+  overdueBookings: (BookingWithDetails & { unitIds?: string[] })[];
 }
 
 export function ActionAlerts({ overdueBookings }: ActionAlertsProps) {
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState(true);
 
-  const visible = overdueBookings.filter((b) => !dismissedIds.has(b.id));
+  const visible = overdueBookings;
   if (visible.length === 0) return null;
 
   return (
@@ -49,7 +49,7 @@ export function ActionAlerts({ overdueBookings }: ActionAlertsProps) {
                     </span>
                   </div>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {b.customer.name} · <span className="font-mono-unit">{b.unit.id}</span> · due {formatDate(b.actionDate)}
+                    {b.customer.name} · <span className="font-mono-unit">{(b.unitIds?.length ? b.unitIds : [b.unit.id]).join(', ')}</span> · due {formatDate(b.actionDate)}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
@@ -66,13 +66,7 @@ export function ActionAlerts({ overdueBookings }: ActionAlertsProps) {
                   >
                     Open <ArrowUpRight className="size-3.5" />
                   </Link>
-                  <button
-                    onClick={() => setDismissedIds((prev) => new Set([...prev, b.id]))}
-                    className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                    aria-label="Dismiss"
-                  >
-                    <X className="size-4" />
-                  </button>
+                  <ActionDoneButton bookingId={b.id} />
                 </div>
               </li>
             );

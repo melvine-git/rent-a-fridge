@@ -77,6 +77,31 @@ export function quoteTotals(lines: Pick<Booking, 'startDate' | 'endDate' | 'rate
   return { hire, extras, discount, net, vatRate, vat, total: round2(net + vat) };
 }
 
+export type ActionState = 'none' | 'open' | 'done' | 'auto-delivered' | 'auto-collected';
+
+/**
+ * Where a booking's follow-up action stands. It counts as done when marked done, or
+ * automatically once the job it names has happened: an action about a delivery is done
+ * when every unit is delivered, one about a collection when every unit is collected.
+ * `statuses` are the booking's unit-line statuses.
+ */
+export function actionState(b: Pick<Booking, 'actionDate' | 'actionDescription' | 'actionDoneAt'>, statuses: BookingStatus[]): ActionState {
+  if (!b.actionDate) return 'none';
+  if (b.actionDoneAt) return 'done';
+  const live = statuses.filter((s) => s !== 'CANCELLED');
+  const text = b.actionDescription ?? '';
+  if (/collect/i.test(text) && live.length && live.every((s) => s === 'COLLECTED')) return 'auto-collected';
+  if (/deliver/i.test(text) && live.length && live.every((s) => s === 'ON_HIRE' || s === 'COLLECTED')) return 'auto-delivered';
+  // Nothing left to follow up on a finished or cancelled booking
+  if (!live.some((s) => s === 'CONFIRMED' || s === 'ON_HIRE')) return 'done';
+  return 'open';
+}
+
+/** An open action whose date has arrived. */
+export function actionOverdue(b: Pick<Booking, 'actionDate' | 'actionDescription' | 'actionDoneAt'>, statuses: BookingStatus[], today: string): boolean {
+  return actionState(b, statuses) === 'open' && !!b.actionDate && b.actionDate <= today;
+}
+
 /** One status for a whole booking, from its unit lines. */
 export function bookingGroupStatus(statuses: BookingStatus[]): BookingStatus {
   if (statuses.some((s) => s === 'ON_HIRE')) return 'ON_HIRE';

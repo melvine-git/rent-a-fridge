@@ -476,11 +476,11 @@ export function NewBookingForm({ customers, allUnits, initialCustomerId, initial
             <Field label="Action date" hint="Appears in alerts when due">
               <Input type="date" value={followUp.actionDate} onChange={(e) => setFollowUp((f) => ({ ...f, actionDate: e.target.value }))} className="h-9" />
             </Field>
-            <Field label="Action required">
+            <Field label="Action required" hint="Deliveries and collections are tracked on Dispatch already. Use this for extra follow-ups; mark it done from the alert or the booking.">
               <Input
                 value={followUp.actionDescription}
                 onChange={(e) => setFollowUp((f) => ({ ...f, actionDescription: e.target.value }))}
-                placeholder="e.g. Confirm collection date with customer"
+                placeholder="e.g. Send invoice, chase PO number, confirm site access"
                 className="h-9"
               />
             </Field>

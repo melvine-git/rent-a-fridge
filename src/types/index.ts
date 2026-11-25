@@ -175,6 +175,7 @@ export interface Booking {
   collectionTime?: string; // HH:MM format
   actionDate?: string; // YYYY-MM-DD - date by which action must be taken
   actionDescription?: string; // Description of the required action
+  actionDoneAt?: string; // ISO timestamp the action was marked done (cleared if the action is changed)
   contactName: string;
   contactPhone: string;
   deliveryAddress: string;

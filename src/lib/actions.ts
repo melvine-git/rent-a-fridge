@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { readDb, writeDb } from './db';
 import { saveImage, saveFile, deleteImage, IMAGE_TYPES, MAX_UPLOAD_BYTES, DOCUMENT_TYPES, MAX_DOCUMENT_BYTES } from './uploads';
 import { formatAddress } from './format';
-import { nextServiceDate, COMPONENT_LABELS, bookingGroupStatus, quoteTotals } from './domain';
+import { nextServiceDate, COMPONENT_LABELS, bookingGroupStatus, quoteTotals, actionOverdue } from './domain';
 import { parseCsv, textToRows } from './import-parse';
 import type { LineJob } from './hire-steps';
 import type {
@@ -464,24 +464,34 @@ export async function getUnitsByType(unitType?: UnitType): Promise<Unit[]> {
   return db.units.filter(u => u.unitType === unitType);
 }
 
-export async function getOverdueActionBookings(): Promise<(Booking & { customer: Customer; unit: Unit })[]> {
+export async function getOverdueActionBookings(): Promise<(Booking & { customer: Customer; unit: Unit; unitIds: string[] })[]> {
   const db = await readDb();
   const todayStr = today();
   
   return db.bookings
-    .filter(b => {
-      // Only active bookings with action dates that have passed
-      if (!ACTIVE_STATUSES.includes(b.status)) return false;
-      if (!b.actionDate) return false;
-      return b.actionDate <= todayStr;
-    })
+    // One entry per booking (the action is shared by its unit lines), only while still to do
+    .filter((b) => groupIdOf(b) === b.id && actionOverdue(b, groupLines(db, b.id).map((l) => l.status), todayStr))
     .map(b => {
       const customer = db.customers.find(c => c.id === b.customerId);
       const unit = db.units.find(u => u.id === b.unitId);
-      return { ...b, customer: customer!, unit: unit! };
+      const unitIds = groupLines(db, b.id).filter((l) => l.status !== 'CANCELLED').map((l) => l.unitId);
+      return { ...b, customer: customer!, unit: unit!, unitIds };
     })
     .filter(b => b.customer && b.unit)
     .sort((a, b) => (a.actionDate || '').localeCompare(b.actionDate || ''));
+}
+
+/** Mark a booking's follow-up action done (or open again). Applies to every unit line. */
+export async function setBookingActionDone(bookingId: string, done: boolean): Promise<{ success: boolean; error?: string }> {
+  const db = await readDb();
+  const lines = groupLines(db, bookingId);
+  if (lines.length === 0) return { success: false, error: 'Booking not found' };
+  if (!lines[0].actionDate) return { success: false, error: 'This booking has no action to complete' };
+  const at = done ? new Date().toISOString() : undefined;
+  for (const l of lines) l.actionDoneAt = at;
+  await writeDb(db);
+  revalidatePath('/', 'layout');
+  return { success: true };
 }
 
 export async function getAvailableUnitsByType(
@@ -663,7 +673,10 @@ export async function updateBookingGroup(
   if (lineError) return { success: false, error: lineError };
 
   const first = lines[0];
-  for (const l of lines) Object.assign(l, shared);
+  // A changed action is a new to-do, so it is no longer marked done
+  const actionChanged = first.actionDate !== shared.actionDate || (first.actionDescription ?? '') !== (shared.actionDescription ?? '');
+  const actionDoneAt = actionChanged ? undefined : first.actionDoneAt;
+  for (const l of lines) Object.assign(l, shared, { actionDoneAt });
   const now = new Date().toISOString();
   for (const id of cancelIds) {
     Object.assign(byId.get(id)!, { status: 'CANCELLED', cancelledAt: now, cancellationReason: 'Removed from booking', actionDate: undefined });
@@ -677,6 +690,7 @@ export async function updateBookingGroup(
     } else {
       const booking: Booking = {
         ...shared,
+        actionDoneAt,
         ...lineFields(l),
         id: generateId('book'),
         groupId: groupIdOf(first),
@@ -1655,7 +1669,7 @@ export async function getShellData(): Promise<ShellData> {
   for (const b of db.bookings) {
     const customer = db.customers.find((c) => c.id === b.customerId);
     // Shared follow-up actions are copied to every unit line; notify once per booking
-    if (ACTIVE_STATUSES.includes(b.status) && b.actionDate && b.actionDate <= todayStr && groupIdOf(b) === b.id) {
+    if (b.actionDate && groupIdOf(b) === b.id && actionOverdue(b, groupLines(db, b.id).map((l) => l.status), todayStr)) {
       notifications.push({
         id: `action-${b.id}`,
         kind: 'ACTION_OVERDUE',

@@ -184,8 +184,13 @@ export function EditBookingSheet({
               <Field label="Action date">
                 <Input type="date" value={followUp.actionDate} onChange={(e) => setFollowUp((f) => ({ ...f, actionDate: e.target.value }))} className="h-9" />
               </Field>
-              <Field label="Action required">
-                <Input value={followUp.actionDescription} onChange={(e) => setFollowUp((f) => ({ ...f, actionDescription: e.target.value }))} className="h-9" />
+              <Field label="Action required" hint="Changing the date or wording makes it a new to-do again">
+                <Input
+                  value={followUp.actionDescription}
+                  onChange={(e) => setFollowUp((f) => ({ ...f, actionDescription: e.target.value }))}
+                  placeholder="e.g. Send invoice, chase PO number"
+                  className="h-9"
+                />
               </Field>
             </div>
             <Field label="Internal notes">
