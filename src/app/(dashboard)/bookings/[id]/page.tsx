@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/app/page-header';
 import { Panel } from '@/components/app/panel';
 import { DetailItem, DetailList, StatStrip, Timeline, type TimelineStep } from '@/components/app/detail';
 import { Avatar } from '@/components/app/avatar';
+import { PaymentPill } from '@/components/app/payment-pill';
 import { StatusBadge, Pill } from '@/components/ui/status-badge';
 import { QuoteTotals } from '@/components/bookings/booking-editors';
 import { BookingActions } from './booking-actions';
@@ -97,7 +98,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
         meta={
           <>
             <StatusBadge status={status} />
-            {paid && <Pill tone="success">Paid</Pill>}
+            <PaymentPill lines={lines} terms={customer.paymentTerms} />
             <span className="font-mono-unit text-xs text-muted-foreground">{reference}</span>
           </>
         }
@@ -318,7 +319,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
                 {paid ? (
                   <span className="font-medium text-emerald-700">Received{booking.paidAt ? ` ${formatDate(booking.paidAt, { year: true })}` : ''} · dispatch can proceed</span>
                 ) : (
-                  <span className="text-muted-foreground">Not marked as paid</span>
+                  <span className="text-muted-foreground">Not marked as paid · for information only, dispatch is not held up</span>
                 )}
               </DetailItem>
               <DetailItem label="Payment terms">{customer.paymentTerms === 'ADVANCE' ? 'Pays in advance' : customer.paymentTerms === 'CREDIT' ? 'On credit' : <span className="text-muted-foreground">Not set</span>}</DetailItem>

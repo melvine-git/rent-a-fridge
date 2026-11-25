@@ -108,7 +108,8 @@ export function CustomerFields({ value, onChange }: { value: CustomerDraft; onCh
         </Field>
       </div>
       <fieldset className="space-y-3">
-        <legend className="mb-1.5 text-[13px] font-medium text-foreground">Contact person</legend>
+        <legend className="text-[13px] font-medium text-foreground">Contact person</legend>
+        <p className="-mt-1.5 text-xs text-muted-foreground">The person you deal with at this customer: name, job title, email and telephone. All optional.</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Contact name">
             <Input value={value.contactName} onChange={(e) => set('contactName', e.target.value)} placeholder="e.g. Sarah Boyd" className="h-9" autoComplete="name" />
@@ -122,15 +123,15 @@ export function CustomerFields({ value, onChange }: { value: CustomerDraft; onCh
           <Field label="Contact telephone">
             <Input value={value.contactPhone} onChange={(e) => set('contactPhone', e.target.value)} placeholder="+44 28 …" className="h-9" autoComplete="tel" />
           </Field>
-          <Field label="Payment terms">
-            <select value={value.paymentTerms} onChange={(e) => set('paymentTerms', e.target.value as CustomerDraft['paymentTerms'])} className={selectClass}>
-              <option value="">Not set</option>
-              <option value="ADVANCE">Pays in advance</option>
-              <option value="CREDIT">On credit</option>
-            </select>
-          </Field>
         </div>
       </fieldset>
+      <Field label="Payment terms" hint="Shown on the customer's bookings and on Dispatch for information only. It never stops a delivery going out.">
+        <select value={value.paymentTerms} onChange={(e) => set('paymentTerms', e.target.value as CustomerDraft['paymentTerms'])} className={selectClass}>
+          <option value="">Not set</option>
+          <option value="ADVANCE">Pays in advance</option>
+          <option value="CREDIT">On credit (account)</option>
+        </select>
+      </Field>
       <fieldset className="space-y-3">
         <legend className="mb-1.5 text-[13px] font-medium text-foreground">Invoice address</legend>
         <Field label="Address 1" required>

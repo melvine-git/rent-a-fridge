@@ -1230,6 +1230,19 @@ export async function saveMaintenanceRecord(
   return { success: true, record: clean };
 }
 
+/** Delete a service record and its attached files. */
+export async function deleteMaintenanceRecord(unitId: string, recordId: string): Promise<{ success: boolean; error?: string }> {
+  const db = await readDb();
+  const unit = db.units.find((u) => u.id === unitId);
+  const i = unit?.maintenanceHistory?.findIndex((r) => r.id === recordId) ?? -1;
+  if (!unit || i < 0) return { success: false, error: 'Service record not found' };
+  const [removed] = unit.maintenanceHistory!.splice(i, 1);
+  await writeDb(db);
+  await Promise.all((removed.attachments ?? []).map((a) => deleteImage(a.url).catch(() => undefined)));
+  revalidatePath('/', 'layout');
+  return { success: true };
+}
+
 export async function removeMaintenanceAttachment(unitId: string, recordId: string, url: string): Promise<{ success: boolean; error?: string }> {
   const db = await readDb();
   const record = db.units.find((u) => u.id === unitId)?.maintenanceHistory?.find((r) => r.id === recordId);
@@ -2056,6 +2069,11 @@ export interface CustomerImportRow {
   phone?: string;
   email?: string;
   address?: string;
+  contactName?: string;
+  contactJobTitle?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  paymentTerms?: Customer['paymentTerms'];
 }
 
 export interface BookingImportRow {
@@ -2102,6 +2120,11 @@ export async function importCustomers(rows: CustomerImportRow[]): Promise<Import
       phone: row.phone?.trim() ?? '',
       email: row.email?.trim() || undefined,
       address: row.address?.trim() ?? '',
+      contactName: row.contactName?.trim() || undefined,
+      contactJobTitle: row.contactJobTitle?.trim() || undefined,
+      contactEmail: row.contactEmail?.trim() || undefined,
+      contactPhone: row.contactPhone?.trim() || undefined,
+      paymentTerms: row.paymentTerms === 'ADVANCE' || row.paymentTerms === 'CREDIT' ? row.paymentTerms : undefined,
       createdAt: today(),
     };
     db.customers.push(customer);

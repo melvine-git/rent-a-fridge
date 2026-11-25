@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Field, selectClass, textareaClass } from '@/components/app/field';
-import { removeMaintenanceAttachment, saveMaintenanceRecord } from '@/lib/actions';
+import { deleteMaintenanceRecord, removeMaintenanceAttachment, saveMaintenanceRecord } from '@/lib/actions';
 import { formatFileSize, toISODate } from '@/lib/format';
 import { UPLOAD_LIMIT_BYTES, formatMB, shrinkImage } from '@/lib/compress-image';
 import { FileText, Image as ImageIcon, Loader2, Paperclip, Trash2, X } from 'lucide-react';
@@ -83,6 +83,8 @@ type Props = {
 export function ServiceRecordDialog({ open, onOpenChange, onSaved, units, unitId: fixedUnitId, record }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [isSaving, startSave] = useTransition();
+  const [isDeleting, startDelete] = useTransition();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [unitId, setUnitId] = useState(fixedUnitId ?? '');
   const [form, setForm] = useState({
     type: record?.type ?? ('SCHEDULED' as MaintenanceRecord['type']),
@@ -127,6 +129,18 @@ export function ServiceRecordDialog({ open, onOpenChange, onSaved, units, unitId
     else toast.error('Could not remove file', { description: r.error });
   };
 
+  const remove = () => {
+    if (!record || !fixedUnitId) return;
+    if (!confirmDelete) return setConfirmDelete(true);
+    startDelete(async () => {
+      const r = await deleteMaintenanceRecord(fixedUnitId, record.id);
+      if (r.success) {
+        toast.success('Service record deleted');
+        onSaved();
+      } else toast.error('Could not delete', { description: r.error });
+    });
+  };
+
   const save = () => {
     if (!unitId) return toast.error('Select a unit');
     if (!form.description.trim()) return toast.error('Describe the work carried out');
@@ -162,7 +176,7 @@ export function ServiceRecordDialog({ open, onOpenChange, onSaved, units, unitId
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold">{record ? 'Edit service record' : fixedUnitId ? `Log service for ${fixedUnitId}` : 'Log service'}</DialogTitle>
-          <DialogDescription>Setting a next service date creates a reminder.</DialogDescription>
+          <DialogDescription>{record ? 'Change any detail, pick a different unit to move the record, or delete it.' : 'Setting a next service date creates a reminder.'}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-3">
@@ -237,7 +251,19 @@ export function ServiceRecordDialog({ open, onOpenChange, onSaved, units, unitId
             {!existing.length && !files.length && <p className="text-xs text-muted-foreground">Delivery notes, manual dockets or outsourced work. PDF or image; photos are resized automatically, up to 4 MB in total per save.</p>}
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="sm:items-center">
+          {record && fixedUnitId && (
+            <Button
+              variant="ghost"
+              onClick={remove}
+              onBlur={() => setConfirmDelete(false)}
+              disabled={isDeleting || isSaving}
+              className={`h-9 gap-1.5 px-3 sm:mr-auto ${confirmDelete ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white' : 'text-red-600 hover:bg-red-50 hover:text-red-700'}`}
+            >
+              {isDeleting ? <Loader2 className="animate-spin" /> : <Trash2 className="size-4" />}
+              {confirmDelete ? 'Click again to delete' : 'Delete record'}
+            </Button>
+          )}
           <Button variant="outline" onClick={() => onOpenChange(false)} className="h-9 px-4">
             Cancel
           </Button>

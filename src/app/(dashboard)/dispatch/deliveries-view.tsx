@@ -10,6 +10,7 @@ import { HeroScene } from '@/components/dispatch/hero-scene';
 import { JobDrawer, accessoryItems, type JobTarget, type JobType } from '@/components/jobs/job-drawer';
 import { powerShort } from '@/lib/domain';
 import { hireSteps, type LineJob } from '@/lib/hire-steps';
+import { PaymentPill } from '@/components/app/payment-pill';
 import { bookingRef, groupVisits, visitOf } from '@/lib/jobs';
 import { formatDate, formatPhone, toISODate, w3wUrl } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -576,6 +577,7 @@ function StopRow({
                 </span>
               ))}
             </span>
+            <PaymentPill lines={stop.lines} terms={b.customer.paymentTerms} className="text-[11px]" />
           </div>
           <p className="text-sm text-muted-foreground">{b.deliveryAddress}</p>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">

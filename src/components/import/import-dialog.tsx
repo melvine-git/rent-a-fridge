@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { importBookings, importCustomers, parseImportFile, type BookingImportRow, type CustomerImportRow, type ImportResult } from '@/lib/actions';
-import { FileUp, Loader2 } from 'lucide-react';
+import { Download, FileUp, Loader2 } from 'lucide-react';
 import type { BookingStatus } from '@/types';
 
 type Kind = 'customers' | 'bookings';
@@ -14,7 +14,43 @@ type Draft = { label: string; detail: string; issue?: string; payload: BookingIm
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-const CUSTOMER_COLS: Record<string, number> = { name: 0, customer: 0, company: 0, business: 0, phone: 1, tel: 1, telephone: 1, mobile: 1, contactnumber: 1, email: 2, mail: 2, address: 3, site: 3, location: 3, addr: 3 };
+const CUSTOMER_COLS: Record<string, number> = {
+  name: 0, customer: 0, company: 0, business: 0, companyname: 0, customername: 0,
+  phone: 1, tel: 1, telephone: 1, mobile: 1, companyphone: 1,
+  email: 2, mail: 2, companyemail: 2,
+  address: 3, site: 3, location: 3, addr: 3, invoiceaddress: 3,
+  contact: 4, contactname: 4, contactperson: 4,
+  jobtitle: 5, position: 5, title: 5, role: 5, contactjobtitle: 5, contactposition: 5,
+  contactemail: 6,
+  contactphone: 7, contacttelephone: 7, contactmobile: 7, contactnumber: 7, contacttel: 7,
+  payment: 8, paymentterms: 8, terms: 8, pays: 8,
+};
+
+const CUSTOMER_TEMPLATE = [
+  ['Name', 'Phone', 'Email', 'Address', 'Contact name', 'Job title', 'Contact email', 'Contact phone', 'Payment terms'],
+  ['Hillside Catering', '028 9000 1234', 'accounts@hillside.co.uk', '12 Main Street, Belfast, BT1 1AA', 'Sarah Boyd', 'Site manager', 'sarah@hillside.co.uk', '07700 900123', 'Credit'],
+];
+const BOOKING_TEMPLATE = [
+  ['Customer', 'Unit', 'Start date', 'End date', 'Status', 'Rate', 'Contact', 'Phone', 'Site', 'Notes'],
+  ['Hillside Catering', 'T401', '01/06/2026', '14/06/2026', 'Collected', '350', 'Sarah Boyd', '07700 900123', '12 Main Street, Belfast, BT1 1AA', 'Summer event'],
+];
+
+/** "advance", "prepay", "paid in advance" -> ADVANCE; "credit", "account" -> CREDIT. */
+function parseTerms(s: string): CustomerImportRow['paymentTerms'] {
+  const t = s.toLowerCase();
+  if (/advance|prepa|upfront|up front/.test(t)) return 'ADVANCE';
+  if (/credit|account|invoice/.test(t)) return 'CREDIT';
+  return undefined;
+}
+
+function downloadTemplate(kind: Kind) {
+  const rows = kind === 'customers' ? CUSTOMER_TEMPLATE : BOOKING_TEMPLATE;
+  const csv = rows.map((r) => r.map((c) => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(',')).join('\r\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: `${kind}-import-template.csv` });
+  a.click();
+  URL.revokeObjectURL(url);
+}
 const BOOKING_COLS: Record<string, number> = {
   customer: 0, customername: 0, name: 0, company: 0,
   unit: 1, unitid: 1, unitcode: 1, fridge: 1, unitno: 1,
@@ -33,7 +69,8 @@ function columnMap(header: string[], cols: Record<string, number>): number[] | n
     const logical = cols[norm(cell)];
     if (logical !== undefined && !found.has(logical)) found.set(logical, i);
   });
-  if (!found.has(0) || !found.has(1)) return null;
+  // Bookings need customer + unit headers; customers need name plus any other known column
+  if (!found.has(0) || (cols === BOOKING_COLS ? !found.has(1) : found.size < 2)) return null;
   const width = Math.max(...Object.values(cols)) + 1;
   return [...Array(width)].map((_, i) => found.get(i) ?? -1);
 }
@@ -59,8 +96,20 @@ function toDrafts(kind: Kind, rows: string[][]): Draft[] {
   const pick = (row: string[], logical: number) => cell(row, map ? map[logical]! : logical);
   return data.map((row) => {
     if (kind === 'customers') {
-      const d: CustomerImportRow = { name: pick(row, 0), phone: pick(row, 1) || undefined, email: pick(row, 2) || undefined, address: pick(row, 3) || undefined };
-      return { label: d.name || '(blank)', detail: [d.phone, d.email].filter(Boolean).join(' · '), issue: d.name ? undefined : 'No name', payload: d };
+      const d: CustomerImportRow = {
+        name: pick(row, 0),
+        phone: pick(row, 1) || undefined,
+        email: pick(row, 2) || undefined,
+        address: pick(row, 3) || undefined,
+        contactName: pick(row, 4) || undefined,
+        contactJobTitle: pick(row, 5) || undefined,
+        contactEmail: pick(row, 6) || undefined,
+        contactPhone: pick(row, 7) || undefined,
+        paymentTerms: parseTerms(pick(row, 8)),
+      };
+      const contact = [d.contactName, d.contactJobTitle].filter(Boolean).join(', ');
+      const terms = d.paymentTerms === 'ADVANCE' ? 'Pays in advance' : d.paymentTerms === 'CREDIT' ? 'On credit' : '';
+      return { label: d.name || '(blank)', detail: [d.phone, d.email, contact && `Contact: ${contact}`, terms].filter(Boolean).join(' · '), issue: d.name ? undefined : 'No name', payload: d };
     }
     const startDate = parseDate(pick(row, 2));
     const endDate = parseDate(pick(row, 3));
@@ -80,13 +129,13 @@ function toDrafts(kind: Kind, rows: string[][]): Draft[] {
     };
     let issue: string | undefined;
     if (!d.customerName || !d.unitId) issue = 'Missing customer or unit';
-    else if (!startDate || !endDate) issue = 'Unreadable dates — use DD/MM/YYYY';
+    else if (!startDate || !endDate) issue = 'Unreadable dates. Use DD/MM/YYYY';
     return { label: `${d.customerName || '(blank)'} · ${d.unitId || '?'}`, detail: `${pick(row, 2)} → ${pick(row, 3)}`, issue, payload: d };
   });
 }
 
 const HELP: Record<Kind, string> = {
-  customers: 'Columns: name, phone, email, address — a header row is auto-detected.',
+  customers: 'Columns: name, phone, email, address, contact name, job title, contact email, contact phone and payment terms (advance or credit). Only name is required. With a header row, columns can be in any order.',
   bookings: 'Columns: customer, unit, start date, end date (then status, rate, contact, phone, site, notes). Dates DD/MM/YYYY or YYYY-MM-DD. Unknown customers are created; units must already exist.',
 };
 
@@ -142,10 +191,13 @@ export function ImportDialog({ kind, open, onOpenChange, onDone }: { kind: Kind;
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold">Import {kind === 'customers' ? 'customers' : 'booking history'}</DialogTitle>
-          <DialogDescription>{HELP[kind]} Accepts .csv, .txt, .tsv or .psv — commas, semicolons, tabs and pipes all split columns.</DialogDescription>
+          <DialogDescription>{HELP[kind]} Accepts .csv, .txt, .tsv or .psv files, with columns separated by commas, semicolons, tabs or pipes.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="button" variant="ghost" onClick={() => downloadTemplate(kind)} className="h-9 gap-1.5 px-2.5 text-muted-foreground">
+              <Download className="size-4" /> Download template
+            </Button>
             <input ref={fileRef} type="file" accept={ACCEPT} className="sr-only" onChange={(e) => pick(e.target.files)} />
             <Button type="button" variant="outline" onClick={() => fileRef.current?.click()} className="h-9 gap-1.5">
               <FileUp className="size-4" /> Choose file

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Pill } from '@/components/ui/status-badge';
 import { UnitTypeIcon } from '@/components/app/unit-type-icon';
+import { PaymentPill } from '@/components/app/payment-pill';
 import { SignaturePad } from '@/components/app/signature-pad';
 import { completeJobs } from '@/lib/actions';
 import { powerLabel, powerShort } from '@/lib/domain';
@@ -178,6 +179,7 @@ function JobSheet({ job, staff, onComplete }: { job: JobTarget; staff: Staff[]; 
           <Pill tone={isDelivery ? 'scheduled' : 'warning'} showDot>
             {isDelivery ? 'Delivery' : 'Collection'}
           </Pill>
+          <PaymentPill lines={bookings} terms={site.customer.paymentTerms} />
           <span className="font-mono-unit text-xs text-muted-foreground">{site.groupId ?? site.id}</span>
         </div>
         <SheetTitle className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-lg font-semibold">

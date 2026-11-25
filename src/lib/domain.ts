@@ -131,6 +131,17 @@ export function nextServiceDate(u: Pick<Unit, 'nextServiceDate' | 'maintenanceHi
 
 export type Tone = 'success' | 'info' | 'scheduled' | 'warning' | 'danger' | 'neutral';
 
+/**
+ * Payment position of a booking, for information only: dispatch is never blocked on it.
+ * Paid once every line is marked paid; otherwise the customer's terms say what to expect.
+ */
+export function paymentInfo(lines: Pick<Booking, 'paymentStatus'>[], terms?: 'ADVANCE' | 'CREDIT'): { label: string; tone: Tone; paid: boolean } {
+  if (lines.length > 0 && lines.every((l) => l.paymentStatus === 'PAID')) return { label: 'Paid', tone: 'success', paid: true };
+  if (terms === 'CREDIT') return { label: 'On credit', tone: 'info', paid: false };
+  if (terms === 'ADVANCE') return { label: 'Awaiting payment', tone: 'warning', paid: false };
+  return { label: 'Not paid yet', tone: 'neutral', paid: false };
+}
+
 /** Single source of truth for status semantics across badges, timeline bars and charts. */
 export const STATUS_META: Record<UnitDisplayStatus | BookingStatus, { label: string; tone: Tone }> = {
   AVAILABLE: { label: 'Available', tone: 'success' },

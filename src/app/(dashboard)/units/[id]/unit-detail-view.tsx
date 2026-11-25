@@ -474,6 +474,7 @@ export function UnitDetailView({ unit, bookingHistory, currentBooking, allUnits,
         <div className="grid gap-4 lg:grid-cols-3 lg:gap-6">
           <Panel
             title="Service history"
+            description="Click a record to edit, move or delete it"
             className="lg:col-span-2"
             action={
               <Button variant="outline" size="sm" onClick={() => setServiceDialog({ key: Date.now() })} className="h-8 gap-1 px-2.5 text-xs">

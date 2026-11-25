@@ -223,7 +223,7 @@ export function MaintenanceView({
       )}
 
       {activeTab === 'logs' && (
-        <Panel title="Service log" count={maintenanceRecords.length} description="Click a record to edit it or attach documents">
+        <Panel title="Service log" count={maintenanceRecords.length} description="Click a record to edit, move or delete it, or attach documents">
           {maintenanceRecords.length === 0 ? (
             <EmptyState
               icon={ClipboardList}
