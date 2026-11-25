@@ -8,7 +8,7 @@ export function HeroBanner() {
   return (
     <div data-motion-img className="relative overflow-hidden rounded-2xl border shadow-[var(--shadow-xs)]">
       {/* eslint-disable-next-line @next/next/no-img-element -- external placeholder URL, swapped for a hosted asset later */}
-      <img src={HERO_IMAGE_URL} alt="Commercial refrigeration units" className="h-44 w-full object-cover sm:h-52 lg:h-60" />
+      <img src={HERO_IMAGE_URL} alt="Commercial refrigeration units" className="h-32 w-full object-cover sm:h-36 lg:h-40" />
       <div className="absolute inset-0 bg-gradient-to-r from-stone-950/85 via-stone-950/55 to-stone-950/10" />
       <div className="absolute inset-0 flex flex-col justify-center gap-2 px-6 sm:px-8">
         <p className="text-[11px] font-semibold tracking-[0.22em] text-red-400 uppercase">Rent-a-Fridge</p>

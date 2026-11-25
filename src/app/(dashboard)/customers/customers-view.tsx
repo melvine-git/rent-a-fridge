@@ -259,7 +259,7 @@ export function CustomersView({
 
             <Button
               onClick={() => setIsDialogOpen(true)}
-              className="h-9 gap-2 px-3.5 hover:bg-[var(--brand-red-dark)]"
+              className="h-9 gap-2 px-3.5 hover:bg-(--brand-red-dark)"
             >
               <Plus className="size-4" />
               Add customer
@@ -475,7 +475,7 @@ export function CustomersView({
                           <a
                             href={`tel:${c.phone}`}
                             onClick={(e) => e.stopPropagation()}
-                            className="flex items-center gap-2 whitespace-nowrap text-foreground hover:text-[var(--brand-red)] hover:underline"
+                            className="flex items-center gap-2 whitespace-nowrap text-foreground hover:text-(--brand-red) hover:underline"
                           >
                             <Phone className="size-3.5 shrink-0 text-muted-foreground" />
                             {formatPhone(c.phone)}
@@ -485,7 +485,7 @@ export function CustomersView({
                             <a
                               href={`mailto:${c.email}`}
                               onClick={(e) => e.stopPropagation()}
-                              className="flex max-w-[220px] items-center gap-2 truncate text-xs text-muted-foreground hover:text-foreground hover:underline"
+                              className="flex max-w-55 items-center gap-2 truncate text-xs text-muted-foreground hover:text-foreground hover:underline"
                             >
                               <Mail className="size-3.5 shrink-0" />
                               <span className="truncate">
@@ -497,7 +497,7 @@ export function CustomersView({
                       </td>
 
                       {/* Address */}
-                      <td className="hidden max-w-[280px] px-4 py-3.5 lg:table-cell">
+                      <td className="hidden max-w-70 px-4 py-3.5 lg:table-cell">
                         <div className="flex items-start gap-2">
                           <MapPin className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
 
@@ -569,7 +569,7 @@ export function CustomersView({
       >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <div className="mb-2 flex size-10 items-center justify-center rounded-lg bg-[var(--brand-red)]/10 text-[var(--brand-red)]">
+            <div className="mb-2 flex size-10 items-center justify-center rounded-lg bg-(--brand-red)/10 text-(--brand-red)">
               <UserPlus className="size-5" />
             </div>
 
@@ -613,7 +613,7 @@ export function CustomersView({
               <Button
                 type="submit"
                 disabled={isSubmitting}
-                className="h-9 gap-2 px-4 hover:bg-[var(--brand-red-dark)]"
+                className="h-9 gap-2 px-4 hover:bg-(--brand-red-dark)"
               >
                 {isSubmitting ? (
                   'Adding…'
