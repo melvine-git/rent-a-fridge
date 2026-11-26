@@ -82,7 +82,8 @@ export default async function DashboardPage() {
       <div className="space-y-5 lg:space-y-6">
         <header data-motion className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <GreetingHero
-            date={new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+            date={new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+            day={new Date().toLocaleDateString('en-GB', { weekday: 'long' })}
             greeting={`${greeting()}${firstName ? `, ${firstName}` : ''}`}
             issues={issues}
             jobsToday={todayJobs}

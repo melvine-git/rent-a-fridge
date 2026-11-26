@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { MotionConfig, motion, type Variants } from 'framer-motion';
 import { ArrowRight, Check, Moon, Sun, Sunrise } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { TypedText } from './typed-text';
 
 export type HeroIssue = { label: string; href: string; tone: 'danger' | 'warning' };
 
@@ -17,7 +18,7 @@ const word: Variants = {
 const PILL = 'border-stone-200 bg-white text-foreground shadow-[var(--shadow-xs)] hover:border-stone-300 hover:bg-stone-50';
 
 /** Dashboard greeting: date, a big display-type greeting that rises in word by word, and the day's issues as live pills. */
-export function GreetingHero({ date, greeting, issues, jobsToday }: { date: string; greeting: string; issues: HeroIssue[]; jobsToday: number }) {
+export function GreetingHero({ date, day, greeting, issues, jobsToday }: { date: string; day: string; greeting: string; issues: HeroIssue[]; jobsToday: number }) {
   const words = greeting.split(' ');
   const part = greeting.endsWith('morning') ? 'morning' : greeting.endsWith('afternoon') ? 'afternoon' : 'evening';
   const Icon = part === 'morning' ? Sunrise : part === 'afternoon' ? Sun : Moon;
@@ -40,7 +41,7 @@ export function GreetingHero({ date, greeting, issues, jobsToday }: { date: stri
           >
             <Icon className="size-3.5" strokeWidth={2.4} />
           </motion.span>
-          {date}
+          <TypedText strings={[date, day]} />
         </motion.p>
 
         <h1 className="font-display mt-2 text-[34px] leading-[1.05] font-bold tracking-[-0.035em] text-foreground sm:text-[44px]" aria-label={greeting}>
