@@ -5,6 +5,7 @@ import { TopBar } from './top-bar';
 import { Sidebar } from './sidebar';
 import { CommandMenu } from './command-menu';
 import { NotificationsPanel } from './notifications-panel';
+import { useMergedNotifications } from '@/components/notifications/notification-overrides';
 import { Toaster } from '@/components/ui/sonner';
 import type { ShellData } from '@/types';
 
@@ -12,6 +13,7 @@ export function Shell({ children, data }: { children: React.ReactNode; data: She
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const notifications = useMergedNotifications(data.notifications);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -39,14 +41,14 @@ export function Shell({ children, data }: { children: React.ReactNode; data: She
           onMenuClick={() => setSidebarOpen(true)}
           onSearchClick={() => setSearchOpen(true)}
           onNotificationsClick={() => setNotificationsOpen(true)}
-          notificationCount={data.notifications.filter((n) => !n.read).length}
+          notificationCount={notifications.filter((n) => !n.read).length}
         />
         <main className="flex-1">
           <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</div>
         </main>
       </div>
       <CommandMenu open={searchOpen} onOpenChange={setSearchOpen} index={data.searchIndex} />
-      <NotificationsPanel open={notificationsOpen} onOpenChange={setNotificationsOpen} notifications={data.notifications} />
+      <NotificationsPanel open={notificationsOpen} onOpenChange={setNotificationsOpen} notifications={notifications} />
       <Toaster
         position="bottom-right"
         richColors

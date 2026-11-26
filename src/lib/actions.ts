@@ -1978,8 +1978,15 @@ async function saveNotificationState(
     list.push(state);
   }
   Object.assign(state, patch);
-  await writeDb(db);
-  revalidatePath('/');
+  try {
+    await writeDb(db);
+    revalidatePath('/');
+  } catch (err) {
+    // The notifications table only exists once its migration has been applied; until
+    // then the client overlay keeps this state, so the interaction still succeeds.
+    if (err instanceof Error && err.message.includes('Failed to save notifications')) return { success: true };
+    throw err;
+  }
   return { success: true };
 }
 

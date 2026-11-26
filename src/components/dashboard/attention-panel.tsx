@@ -5,6 +5,7 @@ import { ArrowUpRight, BellRing, CircleAlert, OctagonAlert, PackageCheck, Wrench
 import { formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { AppNotification } from '@/types';
+import { useMergedNotifications } from '@/components/notifications/notification-overrides';
 
 const KIND_META: Record<AppNotification['kind'], { icon: LucideIcon; cls: string }> = {
   BREAKDOWN: { icon: OctagonAlert, cls: 'bg-red-50 text-red-600 ring-red-600/15' },
@@ -17,7 +18,8 @@ const KIND_META: Record<AppNotification['kind'], { icon: LucideIcon; cls: string
  * Attention Required: actionable issues from the same derived notifications the
  * bell shows — no parallel alert system. "View alerts" opens the shell's panel.
  */
-export function AttentionPanel({ items }: { items: AppNotification[] }) {
+export function AttentionPanel({ items: rawItems }: { items: AppNotification[] }) {
+  const items = useMergedNotifications(rawItems);
   return (
     <section data-motion className="flex flex-col rounded-2xl border bg-white shadow-[var(--shadow-xs)]">
       <header className="flex items-center justify-between gap-2 border-b px-5 py-4">

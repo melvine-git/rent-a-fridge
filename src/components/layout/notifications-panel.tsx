@@ -9,6 +9,7 @@ import { BellOff, CircleAlert, Mail, MailOpen, PackageCheck, TriangleAlert, Wren
 import { cn } from '@/lib/utils';
 import { formatDate, formatRelativeDay } from '@/lib/format';
 import { dismissNotification, setNotificationRead } from '@/lib/actions';
+import { setNotificationOverride } from '@/components/notifications/notification-overrides';
 import type { AppNotification } from '@/types';
 
 const KIND_META: Record<AppNotification['kind'], { icon: typeof CircleAlert; className: string; label: string }> = {
@@ -73,7 +74,10 @@ export function NotificationsPanel({
                     </Link>
                     <div className="flex shrink-0 flex-col justify-center gap-0.5 py-2 pr-2.5">
                       <button
-                        onClick={() => run(setNotificationRead(n.id, !n.read), 'Could not update')}
+                        onClick={() => {
+                          setNotificationOverride(n.id, { read: !n.read });
+                          run(setNotificationRead(n.id, !n.read), 'Could not update');
+                        }}
                         className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
                         aria-label={n.read ? `Mark "${n.title}" as unread` : `Mark "${n.title}" as read`}
                         title={n.read ? 'Mark as unread' : 'Mark as read'}
@@ -81,7 +85,10 @@ export function NotificationsPanel({
                         {n.read ? <Mail className="size-4" /> : <MailOpen className="size-4" />}
                       </button>
                       <button
-                        onClick={() => run(dismissNotification(n.id), 'Could not dismiss')}
+                        onClick={() => {
+                          setNotificationOverride(n.id, { dismissed: true });
+                          run(dismissNotification(n.id), 'Could not dismiss');
+                        }}
                         className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-600"
                         aria-label={`Dismiss "${n.title}"`}
                         title="Dismiss"
