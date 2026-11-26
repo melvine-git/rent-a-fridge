@@ -60,7 +60,8 @@ export function TypedText({ strings, className }: { strings: string[]; className
   return (
     <span className={className} aria-label={strings[0]}>
       <span aria-hidden>{text}</span>
-      <span aria-hidden className="ml-0.5 inline-block w-[0.45em] animate-pulse border-b-2 border-current align-baseline" style={{ height: '0.9em' }} />
+      <span aria-hidden className="ml-0.5 inline-block w-[0.45em] animate-pulse border-b-2
+        border-current align-baseline" style={{ height: '0.9em' }} />
     </span>
   );
 }

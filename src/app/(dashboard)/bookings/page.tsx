@@ -3,6 +3,7 @@ import { getUnitsWithHire, getOverdueActionBookings, getBookingsList } from '@/l
 import { BookingsList } from './bookings-list';
 import { HireBoard, type HireBoardRow } from '@/components/bookings/hire-board';
 import { ActionAlerts } from '@/components/notifications/action-alerts';
+import { TypedText } from '@/components/app/typed-text';
 import { PageHeader } from '@/components/app/page-header';
 import { unitDisplayStatus } from '@/lib/domain';
 import { toISODate } from '@/lib/format';
@@ -31,7 +32,15 @@ export default async function BookingsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Bookings"
-        description="Manage your active hires, track equipment currently with customers and manage upcoming collections."
+        description={
+          <TypedText
+            strings={[
+              'Manage your active hires.',
+              'Track equipment currently with customers.',
+              'Manage upcoming collections.',
+            ]}
+          />
+        }
         meta={
           <span className="tabular rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 ring-1 ring-blue-600/15 ring-inset">
             {onHireCount} out on hire

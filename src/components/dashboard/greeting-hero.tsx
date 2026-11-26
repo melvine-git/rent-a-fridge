@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { MotionConfig, motion, type Variants } from 'framer-motion';
 import { ArrowRight, Check, Moon, Sun, Sunrise } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { TypedText } from './typed-text';
+import { TypedText } from '@/components/app/typed-text';
 
 export type HeroIssue = { label: string; href: string; tone: 'danger' | 'warning' };
 
