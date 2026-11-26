@@ -10,13 +10,11 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { SegmentedControl } from '@/components/app/segmented-control';
 import { EmptyState } from '@/components/app/empty-state';
 import { UnitTypeIcon } from '@/components/app/unit-type-icon';
-import { BookingsCalendar, type PlannerView } from './bookings-calendar';
 import { GBP } from '@/lib/domain';
 import { daysBetween, formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { FileUp, Search, SearchX } from 'lucide-react';
 import type { BookingListItem } from '@/lib/actions';
-import type { BookingWithDetails, Unit } from '@/types';
 
 type ListFilter = 'all' | 'upcoming' | 'onhire' | 'attention' | 'completed' | 'cancelled';
 
@@ -29,39 +27,10 @@ const FILTERS: { value: ListFilter; label: string; test: (b: BookingListItem) =>
   { value: 'cancelled', label: 'Cancelled', test: (b) => b.status === 'CANCELLED' },
 ];
 
-export function BookingsWorkspace({ bookings, allUnits, list, today }: { bookings: BookingWithDetails[]; allUnits: Unit[]; list: BookingListItem[]; today: string }) {
-  const [view, setView] = useState<PlannerView>('timeline');
+/** The bookings table: status segments, search, CSV import, rows linking to booking detail. */
+export function BookingsList({ list, today }: { list: BookingListItem[]; today: string }) {
   const [filter, setFilter] = useState<ListFilter>('all');
   const [query, setQuery] = useState('');
-
-  return (
-    <BookingsCalendar
-      bookings={bookings}
-      allUnits={allUnits}
-      list={list}
-      view={view}
-      onView={setView}
-      listSlot={<BookingsList list={list} filter={filter} onFilter={setFilter} query={query} onQuery={setQuery} today={today} />}
-    />
-  );
-}
-
-function BookingsList({
-  list,
-  filter,
-  onFilter,
-  query,
-  onQuery,
-  today,
-}: {
-  list: BookingListItem[];
-  filter: ListFilter;
-  onFilter: (f: ListFilter) => void;
-  query: string;
-  onQuery: (q: string) => void;
-  today: string;
-}) {
-  const onClearQuery = () => onQuery('');
   const router = useRouter();
   const [importOpen, setImportOpen] = useState(false);
   const rows = useMemo(() => {
@@ -80,18 +49,18 @@ function BookingsList({
     <section className="overflow-hidden rounded-2xl border bg-white shadow-[var(--shadow-xs)]">
       <div className="flex flex-col gap-3 border-b px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="scrollbar-thin -mx-4 overflow-x-auto px-4 xl:mx-0 xl:px-0">
-        <SegmentedControl
-          size="sm"
-          value={filter}
-          onChange={onFilter}
-          ariaLabel="Booking status"
-          options={FILTERS.map((f) => ({ value: f.value, label: f.label, count: list.filter(f.test).length }))}
-        />
+          <SegmentedControl
+            size="sm"
+            value={filter}
+            onChange={setFilter}
+            ariaLabel="Booking status"
+            options={FILTERS.map((f) => ({ value: f.value, label: f.label, count: list.filter(f.test).length }))}
+          />
         </div>
         <div className="flex w-full items-center gap-2 xl:max-w-md">
           <div className="relative flex-1">
             <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Customer, unit, site, PO or ref" className="h-9 bg-white pl-9" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Customer, unit, site, PO or ref" className="h-9 bg-white pl-9" />
           </div>
           <Button variant="outline" onClick={() => setImportOpen(true)} className="h-9 shrink-0 gap-1.5 px-3">
             <FileUp className="size-4" /> Import
@@ -105,7 +74,7 @@ function BookingsList({
           description={query ? 'Try a customer name, unit code, site or PO number.' : 'Bookings in this status will appear here.'}
           action={
             query ? (
-              <button onClick={onClearQuery} className="text-sm font-medium text-[var(--brand-red)] hover:underline">
+              <button onClick={() => setQuery('')} className="text-sm font-medium text-[var(--brand-red)] hover:underline">
                 Clear search
               </button>
             ) : undefined

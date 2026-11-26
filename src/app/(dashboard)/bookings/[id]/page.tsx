@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { getBookingDetail } from '@/lib/actions';
 import { PageHeader } from '@/components/app/page-header';
 import { Panel } from '@/components/app/panel';
-import { DetailItem, DetailList, StatStrip, Timeline, type TimelineStep } from '@/components/app/detail';
+import { DetailItem, DetailList, Timeline, type TimelineStep } from '@/components/app/detail';
 import { Avatar } from '@/components/app/avatar';
 import { StatusBadge, Pill } from '@/components/ui/status-badge';
 import { QuoteTotals } from '@/components/bookings/booking-editors';
@@ -11,7 +11,7 @@ import { BookingActions } from './booking-actions';
 import { BookingUnits } from './booking-units';
 import { GBP, lineCharge, powerLabel, quoteTotals } from '@/lib/domain';
 import { daysFromToday, formatDate, formatPhone, w3wUrl } from '@/lib/format';
-import { Ban, Navigation, Phone, ArrowUpRight, CircleAlert, ExternalLink } from 'lucide-react';
+import { Ban, Navigation, Phone, ArrowUpRight, CalendarRange, CircleAlert, ExternalLink, PoundSterling, Refrigerator, Zap } from 'lucide-react';
 import type { BookingStatus, DeliveryDocket } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -123,14 +123,50 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
         </div>
       )}
 
-      <StatStrip
-        items={[
-          { label: 'Hire period', value: `${formatDate(firstDate)} – ${formatDate(lastDate)}`, sub: live.length > 1 ? 'Across all units' : undefined },
-          { label: live.length === 1 ? 'Unit' : 'Units', value: live.length, sub: <span className="font-mono-unit">{live.map((l) => l.unit.id).join(', ') || '—'}</span> },
-          { label: 'Site power', value: powerLabel(booking), sub: booking.application || 'Application not specified' },
-          { label: 'Quoted total', value: priced ? GBP.format(totals.total) : 'Not priced', sub: priced ? `inc. VAT · ${GBP.format(totals.net)} net` : 'Add rates under Edit' },
-        ]}
-      />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+        <div className="rounded-2xl border bg-white p-4 shadow-[var(--shadow-xs)]">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">Hire period</span>
+            <span className="flex size-8 items-center justify-center rounded-lg bg-(--brand-red)/10 text-(--brand-red)">
+              <CalendarRange className="size-4" />
+            </span>
+          </div>
+          <p className="tabular mt-2 text-lg font-semibold text-foreground">
+            {formatDate(firstDate)} – {formatDate(lastDate)}
+          </p>
+          <p className="mt-1 truncate text-xs text-muted-foreground">{live.length > 1 ? 'Across all units' : 'Hire dates'}</p>
+        </div>
+        <div className="rounded-2xl border bg-white p-4 shadow-[var(--shadow-xs)]">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">{live.length === 1 ? 'Unit' : 'Units'}</span>
+            <span className="flex size-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+              <Refrigerator className="size-4" />
+            </span>
+          </div>
+          <p className="tabular mt-2 text-lg font-semibold text-foreground">{live.length}</p>
+          <p className="font-mono-unit mt-1 truncate text-xs text-muted-foreground">{live.map((l) => l.unit.id).join(', ') || '—'}</p>
+        </div>
+        <div className="rounded-2xl border bg-white p-4 shadow-[var(--shadow-xs)]">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">Site power</span>
+            <span className="flex size-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+              <Zap className="size-4" />
+            </span>
+          </div>
+          <p className="mt-2 text-lg font-semibold text-foreground">{powerLabel(booking)}</p>
+          <p className="mt-1 truncate text-xs text-muted-foreground">{booking.application || 'Application not specified'}</p>
+        </div>
+        <div className="rounded-2xl border bg-white p-4 shadow-[var(--shadow-xs)]">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">Quoted total</span>
+            <span className="flex size-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+              <PoundSterling className="size-4" />
+            </span>
+          </div>
+          <p className="tabular mt-2 text-lg font-semibold text-foreground">{priced ? GBP.format(totals.total) : 'Not priced'}</p>
+          <p className="mt-1 truncate text-xs text-muted-foreground">{priced ? `inc. VAT · ${GBP.format(totals.net)} net` : 'Add rates under Edit'}</p>
+        </div>
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-3 lg:gap-6">
         <div className="space-y-4 lg:col-span-2 lg:space-y-6">
