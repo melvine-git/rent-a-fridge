@@ -34,9 +34,9 @@ export function TypedText({ strings, className }: { strings: string[]; className
         setText(current.slice(0, charIndex));
         if (charIndex === current.length) {
           deleting = true;
-          timeout = setTimeout(tick, 2800); // hold the finished string
+          timeout = setTimeout(tick, 2400); // hold the finished string
         } else {
-          timeout = setTimeout(tick, 42 + Math.random() * 38);
+          timeout = setTimeout(tick, 20 + Math.random() * 18);
         }
       } else {
         charIndex--;
@@ -46,11 +46,11 @@ export function TypedText({ strings, className }: { strings: string[]; className
           strIndex = (strIndex + 1) % list.length;
           timeout = setTimeout(tick, 500);
         } else {
-          timeout = setTimeout(tick, 20);
+          timeout = setTimeout(tick, 12);
         }
       }
     };
-    timeout = setTimeout(tick, 900); // let the greeting rise in first
+    timeout = setTimeout(tick, 500); // let the greeting rise in first
     return () => {
       cancelled = true;
       clearTimeout(timeout);
