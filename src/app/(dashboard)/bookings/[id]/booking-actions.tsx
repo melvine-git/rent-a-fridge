@@ -68,7 +68,7 @@ export function BookingActions({ reference, lines, staff, units }: Props) {
         className={`${outlineBtn} ${paid ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : ''}`}
         onClick={togglePaid}
         disabled={isPaying}
-        title={paid ? 'Payment received — click to mark unpaid' : 'Record that payment has been made (dispatch can happen)'}
+        title={paid ? 'Payment received. Click to mark unpaid' : 'Record that payment has been made (dispatch can happen)'}
       >
         {paid ? <CircleCheck className="size-4" /> : <PoundSterling className="size-4" />} {paid ? 'Paid' : 'Mark paid'}
       </button>
@@ -95,7 +95,7 @@ export function BookingActions({ reference, lines, staff, units }: Props) {
         </button>
       )}
       {toDeliver.length > 0 && (
-        <Button onClick={() => setJob({ bookings: toDeliver, type: 'delivery', delivered })} className="h-9 gap-1.5 px-3 hover:bg-[var(--brand-red-dark)]">
+        <Button onClick={() => setJob({ bookings: toDeliver, type: 'delivery', delivered })} className="h-9 gap-1.5 px-3 hover:bg-(--brand-red-dark)">
           <Truck /> Record delivery
         </Button>
       )}

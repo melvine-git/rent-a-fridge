@@ -149,7 +149,7 @@ export function HireBoard({ rows }: { rows: HireBoardRow[] }) {
       {/* Cards */}
       {filtered.length === 0 ? (
         status === 'ON_HIRE' && !filtersActive ? (
-          <div className="rounded-2xl border bg-white shadow-[var(--shadow-xs)]">
+          <div className="rounded-2xl border bg-white shadow-(--shadow-xs)">
             <EmptyState
               icon={KeyRound}
               title="No active hires right now"
@@ -157,14 +157,14 @@ export function HireBoard({ rows }: { rows: HireBoardRow[] }) {
             />
           </div>
         ) : (
-          <div className="rounded-2xl border bg-white shadow-[var(--shadow-xs)]">
-            <EmptyState icon={Search} title="No units match these filters" description="Try a different status, type or search — or reset the filters." />
+          <div className="rounded-2xl border bg-white shadow-(--shadow-xs)">
+            <EmptyState icon={Search} title="No units match these filters" description="Try a different status, type or search, or reset the filters." />
           </div>
         )
       ) : (
         <div ref={gridRef} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {filtered.map((u) => (
-            <Link key={u.id} href={`/units/${u.id}`} data-card className="hover-lift group flex flex-col rounded-2xl border bg-white p-4 shadow-[var(--shadow-xs)]">
+            <Link key={u.id} href={`/units/${u.id}`} data-card className="hover-lift group flex flex-col rounded-2xl border bg-white p-4 shadow-(--shadow-xs)">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-stone-50 ring-1 ring-stone-200/80 ring-inset">
@@ -224,7 +224,7 @@ export function HireBoard({ rows }: { rows: HireBoardRow[] }) {
                 </dl>
               ) : (
                 <p className="mt-3.5 border-t pt-3 text-[13px] text-muted-foreground">
-                  {u.status === 'AVAILABLE' ? 'In the yard, ready for hire' : u.status === 'MAINTENANCE' ? 'Being serviced — not available' : 'Out of action'}
+                  {u.status === 'AVAILABLE' ? 'In the yard, ready for hire' : u.status === 'MAINTENANCE' ? 'Being serviced, not available' : 'Out of action'}
                 </p>
               )}
             </Link>

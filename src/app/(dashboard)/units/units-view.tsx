@@ -51,7 +51,7 @@ interface UnitsViewProps {
 type Filter = 'all' | 'AVAILABLE' | 'ON_HIRE' | 'MAINTENANCE' | 'ISSUES';
 
 const TYPE_TINT: Record<UnitType, string> = {
-  COLD_STORE: 'bg-red-50 text-[var(--brand-red)]',
+  COLD_STORE: 'bg-red-50 text-(--brand-red)',
   UPRIGHT_FRIDGE: 'bg-emerald-50 text-emerald-700',
   CHEST_FREEZER: 'bg-stone-100 text-stone-600',
   STATIC: 'bg-gray-100 text-gray-600',
@@ -167,7 +167,7 @@ export function UnitsView({ units }: UnitsViewProps) {
                     active && 'ring-2 ring-stone-900'
                   )}
                 >
-                  <span className="h-24 w-32 shrink-0 overflow-hidden rounded-xl bg-gradient-to-b from-white to-stone-100 lg:w-36">
+                  <span className="h-24 w-32 shrink-0 overflow-hidden rounded-xl bg-linear-to-b from-white to-stone-100 lg:w-36">
                     <UnitIllustration type={t} className="transition-transform duration-300 group-hover:scale-105" />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -195,7 +195,7 @@ export function UnitsView({ units }: UnitsViewProps) {
 
       <div className={cn('grid gap-4 lg:gap-6', selected && 'xl:grid-cols-[minmax(0,1fr)_360px]')}>
         {/* Equipment */}
-        <section className="min-w-0 overflow-hidden rounded-2xl border bg-white shadow-[var(--shadow-xs)]">
+        <section className="min-w-0 overflow-hidden rounded-2xl border bg-white shadow-(--shadow-xs)">
           <header className="flex flex-col gap-3 px-5 pt-5 pb-4 lg:flex-row lg:items-center lg:justify-between">
             <h2 className="text-xl font-semibold tracking-tight whitespace-nowrap text-foreground">
               Your equipment
@@ -330,7 +330,7 @@ export function UnitsView({ units }: UnitsViewProps) {
             <Button variant="outline" onClick={() => setShowAddUnit(false)} className="h-9 px-4">
               Cancel
             </Button>
-            <Button onClick={handleAddUnit} className="h-9 px-4 hover:bg-[var(--brand-red-dark)]">
+            <Button onClick={handleAddUnit} className="h-9 px-4 hover:bg-(--brand-red-dark)">
               Add unit
             </Button>
           </DialogFooter>
@@ -386,13 +386,13 @@ function EquipmentCard({ unit: u, selected, onSelect }: { unit: UnitWithHire; se
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        'group flex flex-col overflow-hidden rounded-2xl border bg-white text-left shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-all outline-none hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)] focus-visible:ring-2 focus-visible:ring-ring/40',
+        'group flex flex-col overflow-hidden rounded-2xl border bg-white text-left shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-all outline-none hover:-translate-y-0.5 hover:shadow-(--shadow-md) focus-visible:ring-2 focus-visible:ring-ring/40',
         selected ? 'border-red-300 ring-2 ring-red-200' : 'hover:border-stone-300'
       )}
     >
       <div className="relative">
-        <UnitImage unit={u} className="aspect-[16/10] w-full" />
-        <StatusPill unit={u} className="absolute top-2.5 right-2.5 shadow-[var(--shadow-xs)]" />
+        <UnitImage unit={u} className="aspect-16/10 w-full" />
+        <StatusPill unit={u} className="absolute top-2.5 right-2.5 shadow-(--shadow-xs)" />
       </div>
       <div className="flex flex-1 flex-col gap-2 p-4">
         <div>
@@ -403,7 +403,7 @@ function EquipmentCard({ unit: u, selected, onSelect }: { unit: UnitWithHire; se
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1">
-            <Box className="size-3.5" /> {cap ?? 'Capacity —'}
+            <Box className="size-3.5" /> {cap ?? 'No capacity set'}
           </span>
           {dims && <span className="tabular">{dims}</span>}
         </div>
@@ -468,7 +468,7 @@ function DetailPanel({ unit: u, onClose }: { unit: UnitWithHire; onClose: () => 
   ];
 
   return (
-    <aside className="hidden h-fit flex-col overflow-hidden rounded-2xl border bg-white shadow-[var(--shadow-xs)] xl:sticky xl:top-20 xl:flex">
+    <aside className="hidden h-fit flex-col overflow-hidden rounded-2xl border bg-white shadow-(--shadow-xs) xl:sticky xl:top-20 xl:flex">
       <header className="flex items-start gap-3 px-5 pt-5">
         <div className="min-w-0 flex-1">
           <h2 className="text-2xl leading-tight font-bold tracking-tight text-foreground">{u.id}</h2>
@@ -484,7 +484,7 @@ function DetailPanel({ unit: u, onClose }: { unit: UnitWithHire; onClose: () => 
       </header>
 
       <div className="px-5 pt-4">
-        <UnitImage unit={u} fit="cover" className="aspect-[16/10] w-full rounded-xl border" />
+        <UnitImage unit={u} fit="cover" className="aspect-16/10 w-full rounded-xl border" />
       </div>
 
       <div className="grid grid-cols-2 gap-2.5 px-5 pt-4">
@@ -528,7 +528,7 @@ function DetailPanel({ unit: u, onClose }: { unit: UnitWithHire; onClose: () => 
       </dl>
 
       <footer className="flex items-center gap-2 border-t px-5 py-4">
-        <Link href={`/units/${u.id}`} className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg bg-[var(--brand-red)] text-sm font-semibold text-white transition-colors hover:bg-[var(--brand-red-dark)]">
+        <Link href={`/units/${u.id}`} className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg bg-(--brand-red) text-sm font-semibold text-white transition-colors hover:bg-(--brand-red-dark)">
           <Wrench className="size-4" /> Manage unit
         </Link>
         <Link href={`/units/${u.id}?tab=bookings`} className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border text-sm font-medium transition-colors hover:bg-muted">
@@ -539,7 +539,7 @@ function DetailPanel({ unit: u, onClose }: { unit: UnitWithHire; onClose: () => 
             <MoreHorizontal className="size-4" />
           </button>
           {menu && (
-            <div className="absolute right-0 bottom-12 z-20 w-52 overflow-hidden rounded-xl border bg-white py-1 text-sm shadow-[var(--shadow-lg)]">
+            <div className="absolute right-0 bottom-12 z-20 w-52 overflow-hidden rounded-xl border bg-white py-1 text-sm shadow-(--shadow-lg)">
               {!outOfAction(u) && (
                 <MenuLink href={`/bookings/new?unit=${encodeURIComponent(u.id)}`} icon={CalendarPlus}>
                   Book {u.id}
@@ -607,7 +607,7 @@ function UnitsTable({ units, onOpen }: { units: UnitWithHire[]; onOpen: (u: Unit
               <td className="px-4 py-3">
                 <StatusBadge status={unitDisplayStatus(u)} />
               </td>
-              <td className="hidden max-w-[260px] px-4 py-3 md:table-cell">
+              <td className="hidden max-w-65 px-4 py-3 md:table-cell">
                 <Availability unit={u} />
               </td>
               <td className="hidden px-4 py-3 md:table-cell">

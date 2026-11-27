@@ -80,13 +80,13 @@ function toDrafts(kind: Kind, rows: string[][]): Draft[] {
     };
     let issue: string | undefined;
     if (!d.customerName || !d.unitId) issue = 'Missing customer or unit';
-    else if (!startDate || !endDate) issue = 'Unreadable dates — use DD/MM/YYYY';
+    else if (!startDate || !endDate) issue = 'Unreadable dates. Use DD/MM/YYYY';
     return { label: `${d.customerName || '(blank)'} · ${d.unitId || '?'}`, detail: `${pick(row, 2)} → ${pick(row, 3)}`, issue, payload: d };
   });
 }
 
 const HELP: Record<Kind, string> = {
-  customers: 'Columns: name, phone, email, address — a header row is auto-detected.',
+  customers: 'Columns: name, phone, email, address. A header row is auto-detected.',
   bookings: 'Columns: customer, unit, start date, end date (then status, rate, contact, phone, site, notes). Dates DD/MM/YYYY or YYYY-MM-DD. Unknown customers are created; units must already exist.',
 };
 
@@ -142,7 +142,7 @@ export function ImportDialog({ kind, open, onOpenChange, onDone }: { kind: Kind;
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold">Import {kind === 'customers' ? 'customers' : 'booking history'}</DialogTitle>
-          <DialogDescription>{HELP[kind]} Accepts .csv, .txt, .tsv or .psv — commas, semicolons, tabs and pipes all split columns.</DialogDescription>
+          <DialogDescription>{HELP[kind]} Accepts .csv, .txt, .tsv or .psv. Commas, semicolons, tabs and pipes all split columns.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="flex items-center gap-3">

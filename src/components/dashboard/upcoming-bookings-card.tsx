@@ -15,7 +15,7 @@ export interface UpcomingBookingRow {
 /** Card listing the next few upcoming bookings, one row per booking (multi-unit groups counted once). */
 export function UpcomingBookingsCard({ rows }: { rows: UpcomingBookingRow[] }) {
   return (
-    <section data-motion className="flex flex-col rounded-2xl border bg-white shadow-[var(--shadow-xs)]">
+    <section data-motion className="flex flex-col rounded-2xl border bg-white shadow-(--shadow-xs)">
       <header className="flex items-center justify-between gap-2 border-b px-5 py-4">
         <div className="flex items-center gap-2.5">
           <span className="flex size-8 items-center justify-center rounded-lg bg-violet-50 text-violet-600 ring-1 ring-violet-600/15 ring-inset">
@@ -29,7 +29,7 @@ export function UpcomingBookingsCard({ rows }: { rows: UpcomingBookingRow[] }) {
       </header>
       {rows.length === 0 ? (
         <p className="flex flex-1 items-center justify-center px-5 py-10 text-center text-sm text-muted-foreground">
-          No upcoming bookings — new ones will appear here.
+          No upcoming bookings. New ones will appear here.
         </p>
       ) : (
         <ul className="divide-y">
