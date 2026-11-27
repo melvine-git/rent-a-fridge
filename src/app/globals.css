@@ -198,6 +198,12 @@
     scrollbar-width: thin;
     scrollbar-color: var(--warm-gray-300) transparent;
   }
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
 }
 /* Dashboard map */
 .maplibregl-map {

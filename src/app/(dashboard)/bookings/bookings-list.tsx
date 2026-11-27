@@ -48,7 +48,7 @@ export function BookingsList({ list, today }: { list: BookingListItem[]; today: 
   return (
     <section className="overflow-hidden rounded-2xl border bg-white shadow-[var(--shadow-xs)]">
       <div className="flex flex-col gap-3 border-b px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
-        <div className="scrollbar-thin -mx-4 overflow-x-auto px-4 xl:mx-0 xl:px-0">
+        <div className="scrollbar-none -mx-4 overflow-x-auto px-4 xl:mx-0 xl:px-0">
           <SegmentedControl
             size="sm"
             value={filter}
@@ -57,12 +57,12 @@ export function BookingsList({ list, today }: { list: BookingListItem[]; today: 
             options={FILTERS.map((f) => ({ value: f.value, label: f.label, count: list.filter(f.test).length }))}
           />
         </div>
-        <div className="flex w-full items-center gap-2 xl:max-w-md">
-          <div className="relative flex-1">
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center xl:max-w-md">
+          <div className="relative w-full flex-1">
             <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Customer, unit, site, PO or ref" className="h-9 bg-white pl-9" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Customer, unit, site, PO or ref" className="h-9 w-full bg-white pl-9" />
           </div>
-          <Button variant="outline" onClick={() => setImportOpen(true)} className="h-9 shrink-0 gap-1.5 px-3">
+          <Button variant="outline" onClick={() => setImportOpen(true)} className="h-9 w-full shrink-0 gap-1.5 px-3 sm:w-auto">
             <FileUp className="size-4" /> Import
           </Button>
         </div>

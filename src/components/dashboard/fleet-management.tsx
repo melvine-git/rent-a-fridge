@@ -70,23 +70,30 @@ export function FleetManagement({ rows }: { rows: FleetRow[] }) {
           </span>
           <h2 className="text-sm font-semibold text-foreground">Fleet management</h2>
         </div>
-        <Link href="/units" className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted">
+        <Link href="/units" className="inline-flex shrink-0 items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium whitespace-nowrap text-foreground transition-colors hover:bg-muted">
           View all <ArrowRight className="size-3.5" />
         </Link>
       </header>
 
-      <div className="flex gap-1.5 border-b px-5 py-2.5">
+      <div className="scrollbar-none flex gap-1.5 overflow-x-auto border-b px-5 py-2.5">
         {tabs.map((t) => (
           <button
             key={t.value}
             type="button"
             onClick={() => setTab(t.value)}
             className={cn(
-              'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium transition-colors',
+              'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium whitespace-nowrap transition-colors sm:px-3',
               tab === t.value ? 'bg-stone-900 text-white' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
             )}
           >
-            {t.label}
+            {t.value === 'all' ? (
+              <>
+                <span className="sm:hidden">All</span>
+                <span className="hidden sm:inline">All units</span>
+              </>
+            ) : (
+              t.label
+            )}
             <span className={cn('tabular rounded-full px-1.5 text-[11px] font-semibold', tab === t.value ? 'bg-white/15 text-white' : 'bg-muted text-muted-foreground')}>{t.count}</span>
           </button>
         ))}
@@ -107,11 +114,11 @@ export function FleetManagement({ rows }: { rows: FleetRow[] }) {
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-2 text-sm font-medium text-foreground group-hover:underline">
                     <span className="font-mono-unit">{u.id}</span>
-                    <span className="text-xs font-normal text-muted-foreground">{TYPE_LABEL[u.unitType]}</span>
+                    <span className="min-w-0 truncate text-xs font-normal text-muted-foreground">{TYPE_LABEL[u.unitType]}</span>
                   </p>
                   <p className="truncate text-xs text-muted-foreground">{u.location ?? 'In yard'}</p>
                 </div>
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span className="flex shrink-0 items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground">
                   <span className={cn('size-2 rounded-full', DOT[u.status])} aria-hidden />
                   {STATUS_META[u.status].label}
                 </span>

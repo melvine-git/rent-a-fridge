@@ -1,18 +1,21 @@
-import Link from 'next/link';
-import { getUnitsWithHire, getOverdueActionBookings, getBookingsList } from '@/lib/actions';
-import { BookingsList } from './bookings-list';
+import { bookingsForCalendar, getUnitsWithHire, getOverdueActionBookings, getBookingsList } from '@/lib/actions';
+import { BookingsWorkspace } from './bookings-workspace';
 import { HireBoard, type HireBoardRow } from '@/components/bookings/hire-board';
 import { ActionAlerts } from '@/components/notifications/action-alerts';
 import { TypedText } from '@/components/app/typed-text';
 import { PageHeader } from '@/components/app/page-header';
 import { unitDisplayStatus } from '@/lib/domain';
 import { toISODate } from '@/lib/format';
-import { Plus } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
 export default async function BookingsPage() {
-  const [units, overdueBookings, list] = await Promise.all([getUnitsWithHire(), getOverdueActionBookings(), getBookingsList()]);
+  const [bookings, units, overdueBookings, list] = await Promise.all([
+    bookingsForCalendar(),
+    getUnitsWithHire(),
+    getOverdueActionBookings(),
+    getBookingsList(),
+  ]);
 
   const rows: HireBoardRow[] = units.map((u) => ({
     id: u.id,
@@ -46,18 +49,10 @@ export default async function BookingsPage() {
             {onHireCount} out on hire
           </span>
         }
-        actions={
-          <Link
-            href="/bookings/new"
-            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[var(--brand-red)] px-3 text-sm font-medium text-white shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--brand-red-dark)]"
-          >
-            <Plus className="size-4" /> New booking
-          </Link>
-        }
       />
       <ActionAlerts overdueBookings={overdueBookings} />
+      <BookingsWorkspace bookings={bookings} allUnits={units} list={list} today={toISODate(new Date())} />
       <HireBoard rows={rows} />
-      <BookingsList list={list} today={toISODate(new Date())} />
     </div>
   );
 }

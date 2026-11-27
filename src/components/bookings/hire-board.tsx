@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import gsap from 'gsap';
-import { ArrowUpRight, KeyRound, Plus, RotateCcw, Search, X } from 'lucide-react';
+import { ArrowUpRight, KeyRound, RotateCcw, Search, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/app/empty-state';
 import { UnitIllustration } from '@/components/fleet/unit-illustration';
@@ -91,14 +91,14 @@ export function HireBoard({ rows }: { rows: HireBoardRow[] }) {
     <section className="space-y-4">
       {/* Filter bar */}
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="scrollbar-none -mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-1 xl:mx-0 xl:px-0 xl:pb-0">
           {pills.map((p) => (
             <button
               key={p.value}
               type="button"
               onClick={() => setStatus(p.value)}
               className={cn(
-                'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium transition-colors',
+                'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium whitespace-nowrap transition-colors',
                 status === p.value ? 'bg-stone-900 text-white' : 'border bg-white text-muted-foreground hover:bg-muted hover:text-foreground'
               )}
             >
@@ -107,38 +107,42 @@ export function HireBoard({ rows }: { rows: HireBoardRow[] }) {
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {UNIT_TYPES.map((t) => {
-            const active = types.includes(t);
-            return (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTypes((s) => (active ? s.filter((x) => x !== t) : [...s, t]))}
-                className={cn(
-                  'inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[13px] font-medium transition-colors',
-                  active ? 'border-stone-900 bg-stone-900 text-white' : 'bg-white text-muted-foreground hover:bg-muted hover:text-foreground'
-                )}
-              >
-                <UnitTypeIcon type={t} className="size-3.5" />
-                {UNIT_TYPE_LABELS[t]}
-              </button>
-            );
-          })}
-          <div className="relative">
-            <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Unit, customer or site" className="h-8 w-44 bg-white pl-8 text-[13px]" />
-            {query && (
-              <button type="button" onClick={() => setQuery('')} aria-label="Clear search" className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                <X className="size-3.5" />
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center xl:justify-end">
+          <div className="scrollbar-none -mx-1 flex min-w-0 items-center gap-1.5 overflow-x-auto px-1 pb-1 sm:mx-0 sm:px-0 sm:pb-0">
+            {UNIT_TYPES.map((t) => {
+              const active = types.includes(t);
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTypes((s) => (active ? s.filter((x) => x !== t) : [...s, t]))}
+                  className={cn(
+                    'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[13px] font-medium whitespace-nowrap transition-colors',
+                    active ? 'border-stone-900 bg-stone-900 text-white' : 'bg-white text-muted-foreground hover:bg-muted hover:text-foreground'
+                  )}
+                >
+                  <UnitTypeIcon type={t} className="size-3.5" />
+                  {UNIT_TYPE_LABELS[t]}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="relative min-w-0 flex-1 sm:w-44 sm:flex-none">
+              <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Unit, customer or site" className="h-8 w-full bg-white pl-8 text-[13px]" />
+              {query && (
+                <button type="button" onClick={() => setQuery('')} aria-label="Clear search" className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+            {filtersActive && (
+              <button type="button" onClick={reset} className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-[13px] font-medium whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground">
+                <RotateCcw className="size-3.5" /> Reset
               </button>
             )}
           </div>
-          {filtersActive && (
-            <button type="button" onClick={reset} className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground">
-              <RotateCcw className="size-3.5" /> Reset
-            </button>
-          )}
         </div>
       </div>
 
@@ -150,14 +154,6 @@ export function HireBoard({ rows }: { rows: HireBoardRow[] }) {
               icon={KeyRound}
               title="No active hires right now"
               description="There's no equipment currently out on hire. When a booking moves into the on-hire stage, it will appear here."
-              action={
-                <Link
-                  href="/bookings/new"
-                  className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[var(--brand-red)] px-3 text-sm font-medium text-white shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--brand-red-dark)]"
-                >
-                  <Plus className="size-4" /> New booking
-                </Link>
-              }
             />
           </div>
         ) : (
